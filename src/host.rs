@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::io::{self, Write};
 use std::time::{Duration, Instant};
 use std::{println, todo};
@@ -34,7 +35,7 @@ pub fn host_race() -> Result<(), String> {
     let mut stdout = io::stdout();
     let mut user_input = String::new();
     let final_sentence = "The brown fox jumps over bla";
-
+    let mut cursor_row = 0 as u16;
     let mut cursor_index = 0;
     execute!(
         stdout,
@@ -50,7 +51,7 @@ pub fn host_race() -> Result<(), String> {
 
     let race_started_at = Instant::now();
 
-    render(
+    cursor_row = render(
         &mut stdout,
         final_sentence,
         &user_input,
@@ -63,7 +64,7 @@ pub fn host_race() -> Result<(), String> {
         if race_started_at.elapsed() >= typing_duration {
             break;
         }
-        render(
+        cursor_row = render(
             &mut stdout,
             final_sentence,
             &user_input,
@@ -106,7 +107,7 @@ pub fn host_race() -> Result<(), String> {
             },
             _ => {}
         }
-        render(
+        cursor_row = render(
             &mut stdout,
             final_sentence,
             &user_input,
@@ -118,7 +119,14 @@ pub fn host_race() -> Result<(), String> {
 
     // end time
 
-    todo!("Print diagnostics");
+    let (wpm, accuracy) = statistics(
+        &mut stdout,
+        final_sentence,
+        &user_input.to_string(),
+        cursor_row,
+    )?;
+
+    // dont return
 
     return Ok(());
 }
@@ -130,7 +138,7 @@ fn render(
     cursor_index: usize,
     race_started_at: Instant,
     total_seconds: f64,
-) -> Result<(), String> {
+) -> Result<u16, String> {
     let input_start_col = 0;
     let input_start_row = 7;
 
@@ -155,7 +163,7 @@ fn render(
 
     stdout.flush().map_err(|e| e.to_string())?;
 
-    Ok(())
+    Ok(cursor_row)
 }
 
 fn cursor_position_for_index(
@@ -170,4 +178,28 @@ fn cursor_position_for_index(
     let col = absolute_col % terminal_width as usize;
 
     Ok((col as u16, input_start_row + row_offset as u16))
+}
+
+fn statistics(
+    stdout: &mut std::io::Stdout,
+    final_sentence: &str,
+    user_input: &str,
+    current_cursor_row: u16,
+) -> Result<(f64, f64), String> {
+    let wpm = 100.0;
+    let accuracy = 99.0;
+
+    execute!(
+        stdout,
+        MoveTo(0, current_cursor_row + 1),
+        Print("------"),
+        MoveTo(0, current_cursor_row + 2),
+        Print(format!("Words per minute: {:.1}", wpm)),
+        MoveTo(0, current_cursor_row + 3),
+        Print(format!("Accuracy: {:.1}", accuracy)),
+        MoveTo(0, current_cursor_row + 4)
+    )
+    .map_err(|e| e.to_string())?;
+
+    return Ok((wpm, accuracy));
 }
