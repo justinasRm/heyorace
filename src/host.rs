@@ -1,8 +1,8 @@
 use std::io::{self, Write};
-use std::println;
+use std::time::{Duration, Instant};
+use std::{println, todo};
 
 use crossterm::cursor::MoveTo;
-use crossterm::execute;
 use crossterm::style::Print;
 use crossterm::terminal::Clear;
 use crossterm::terminal::ClearType::{All, FromCursorDown};
@@ -10,6 +10,7 @@ use crossterm::{
     event::{self, Event, KeyCode},
     terminal::{disable_raw_mode, enable_raw_mode},
 };
+use crossterm::{execute, terminal};
 
 struct RawModeGuard;
 
@@ -28,13 +29,13 @@ impl Drop for RawModeGuard {
 
 pub fn host_race() -> Result<(), String> {
     let _raw_mode = RawModeGuard::new().map_err(|e| e.to_string())?;
+    let typing_duration = Duration::from_secs(5);
 
     let mut stdout = io::stdout();
     let mut user_input = String::new();
     let final_sentence = "The brown fox jumps over bla";
 
     let mut cursor_index = 0;
-
     execute!(
         stdout,
         Clear(All),
@@ -47,10 +48,34 @@ pub fn host_race() -> Result<(), String> {
     )
     .map_err(|e| e.to_string())?;
 
-    render(&mut stdout, final_sentence, &user_input, cursor_index)?;
-    // time starts
+    let race_started_at = Instant::now();
 
+    render(
+        &mut stdout,
+        final_sentence,
+        &user_input,
+        cursor_index,
+        race_started_at,
+        typing_duration.as_secs_f64(),
+    )?;
+    // time starts
     loop {
+        if race_started_at.elapsed() >= typing_duration {
+            break;
+        }
+        render(
+            &mut stdout,
+            final_sentence,
+            &user_input,
+            cursor_index,
+            race_started_at,
+            typing_duration.as_secs_f64(),
+        )?;
+
+        if !event::poll(Duration::from_millis(100)).map_err(|e| e.to_string())? {
+            continue;
+        }
+
         let event = event::read().map_err(|e| e.to_string())?;
 
         // redraw
@@ -81,31 +106,68 @@ pub fn host_race() -> Result<(), String> {
             },
             _ => {}
         }
-        render(&mut stdout, final_sentence, &user_input, cursor_index)?;
+        render(
+            &mut stdout,
+            final_sentence,
+            &user_input,
+            cursor_index,
+            race_started_at,
+            typing_duration.as_secs_f64(),
+        )?;
     }
 
     // end time
+
+    todo!("Print diagnostics");
 
     return Ok(());
 }
 
 fn render(
     stdout: &mut std::io::Stdout,
-    _final_sentence: &str,
+    final_sentence: &str,
     user_input: &str,
     cursor_index: usize,
+    race_started_at: Instant,
+    total_seconds: f64,
 ) -> Result<(), String> {
+    let input_start_col = 0;
+    let input_start_row = 7;
+
+    let (cursor_col, cursor_row) =
+        cursor_position_for_index(cursor_index, input_start_col, input_start_row)?;
+
+    let elapsed_seconds = race_started_at.elapsed().as_secs_f64();
     execute!(
         stdout,
+        MoveTo(0, 4),
+        Print(format!(
+            "Elapsed: {:.1}s / {:.1}s",
+            elapsed_seconds, total_seconds
+        )),
         MoveTo(0, 5),
         Clear(FromCursorDown),
-        MoveTo(0, 7),
+        MoveTo(input_start_col, input_start_row),
         Print(user_input),
-        MoveTo(cursor_index as u16, 7),
+        MoveTo(cursor_col, cursor_row),
     )
     .map_err(|e| e.to_string())?;
 
     stdout.flush().map_err(|e| e.to_string())?;
 
     Ok(())
+}
+
+fn cursor_position_for_index(
+    cursor_index: usize,
+    input_start_col: u16,
+    input_start_row: u16,
+) -> Result<(u16, u16), String> {
+    let (terminal_width, _) = terminal::size().map_err(|e| e.to_string())?;
+
+    let absolute_col = input_start_col as usize + cursor_index;
+    let row_offset = absolute_col / terminal_width as usize;
+    let col = absolute_col % terminal_width as usize;
+
+    Ok((col as u16, input_start_row + row_offset as u16))
 }
