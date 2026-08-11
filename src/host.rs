@@ -1,7 +1,5 @@
-use std::collections::HashSet;
 use std::io::{self, Write};
 use std::time::{Duration, Instant};
-use std::{println, todo};
 
 use crossterm::cursor::MoveTo;
 use crossterm::style::Print;
@@ -35,19 +33,9 @@ pub fn host_race() -> Result<(), String> {
     let mut stdout = io::stdout();
     let mut user_input = String::new();
     let final_sentence = "The brown fox jumps over bla";
-    let mut cursor_row = 0 as u16;
+    let mut cursor_row = 0;
     let mut cursor_index = 0;
-    execute!(
-        stdout,
-        Clear(All),
-        MoveTo(0, 2),
-        Print(format!(
-            "Your sentence: '{}'\n\r",
-            final_sentence.to_string()
-        )),
-        Print("Start whenever you are ready!\n\r"),
-    )
-    .map_err(|e| e.to_string())?;
+    starting_message(&mut stdout, final_sentence)?;
 
     let race_started_at = Instant::now();
 
@@ -59,7 +47,7 @@ pub fn host_race() -> Result<(), String> {
         race_started_at,
         typing_duration.as_secs_f64(),
     )?;
-    // time starts
+
     loop {
         if race_started_at.elapsed() >= typing_duration {
             break;
@@ -148,12 +136,12 @@ fn render(
     let elapsed_seconds = race_started_at.elapsed().as_secs_f64();
     execute!(
         stdout,
-        MoveTo(0, 4),
+        MoveTo(0, 5),
         Print(format!(
             "Elapsed: {:.1}s / {:.1}s",
             elapsed_seconds, total_seconds
         )),
-        MoveTo(0, 5),
+        MoveTo(0, 6),
         Clear(FromCursorDown),
         MoveTo(input_start_col, input_start_row),
         Print(user_input),
@@ -202,4 +190,38 @@ fn statistics(
     .map_err(|e| e.to_string())?;
 
     return Ok((wpm, accuracy));
+}
+
+fn starting_message(stdout: &mut std::io::Stdout, final_sentence: &str) -> Result<(), String> {
+    // let your_sentence_message = format!("Your sentence: '{}'\n\r", final_sentence.to_string());
+    let first_message: String = "The sentence is:".to_string();
+    let first_message_column =
+        centered_message_column(first_message.as_str()).map_err(|e| e.to_string())?;
+    let second_message: String = format!("'{final_sentence}'");
+    let second_message_column =
+        centered_message_column(second_message.as_str()).map_err(|e| e.to_string())?;
+    let third_message = "Start whenever you're ready!".to_string();
+    let third_message_column =
+        centered_message_column(third_message.as_str()).map_err(|e| e.to_string())?;
+    execute!(
+        stdout,
+        Clear(All),
+        MoveTo(first_message_column, 2),
+        Print(first_message),
+        MoveTo(second_message_column, 3),
+        Print(second_message),
+        MoveTo(third_message_column, 4),
+        Print(third_message),
+    )
+    .map_err(|e| e.to_string())?;
+
+    return Ok(());
+}
+
+// returns column index, so the provided 'message' is centered
+fn centered_message_column(message: &str) -> Result<u16, String> {
+    let (terminal_width, _) = terminal::size().map_err(|e| e.to_string())?;
+    let col = terminal_width / 2 - message.len() as u16 / 2;
+
+    return Ok(col);
 }
