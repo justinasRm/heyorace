@@ -1,5 +1,6 @@
 use std::io::{self, Write};
 use std::time::{Duration, Instant};
+use std::unreachable;
 
 use crossterm::cursor::MoveTo;
 use crossterm::style::Print;
@@ -28,11 +29,11 @@ impl Drop for RawModeGuard {
 
 pub fn host_race() -> Result<(), String> {
     let _raw_mode = RawModeGuard::new().map_err(|e| e.to_string())?;
-    let typing_duration = Duration::from_secs(5);
+    let typing_duration = Duration::from_secs(6);
 
     let mut stdout = io::stdout();
     let mut user_input = String::new();
-    let final_sentence = "The brown fox jumps over bla";
+    let final_sentence = "The brown fox jumps over bla The brown fox jumps over bla";
     let mut cursor_row = 0;
     let mut cursor_index = 0;
     starting_message(&mut stdout, final_sentence)?;
@@ -107,14 +108,9 @@ pub fn host_race() -> Result<(), String> {
 
     // end time
 
-    let (wpm, accuracy) = statistics(
-        &mut stdout,
-        final_sentence,
-        &user_input.to_string(),
-        cursor_row,
-    )?;
+    let (wpm, accuracy) = statistics(final_sentence, &user_input.to_string(), typing_duration)?;
 
-    // dont return
+    print_statistics(wpm, accuracy, &mut stdout, cursor_row)?;
 
     return Ok(());
 }
@@ -169,14 +165,43 @@ fn cursor_position_for_index(
 }
 
 fn statistics(
-    stdout: &mut std::io::Stdout,
     final_sentence: &str,
     user_input: &str,
-    current_cursor_row: u16,
+    total_duration: Duration,
 ) -> Result<(f64, f64), String> {
-    let wpm = 100.0;
-    let accuracy = 99.0;
+    let mut correct_word_count = 0;
+    let mut accuracy = 100.0;
 
+    let user_input_words: Vec<&str> = user_input.split(" ").collect();
+    let total_word_count = user_input_words.len();
+    let final_sentence_words: Vec<&str> = final_sentence.split(" ").collect();
+
+    for (i, user_inputed_word) in user_input_words.iter().enumerate() {
+        //
+        let Some(correct_word) = final_sentence_words.get(i) else {
+            unreachable!(
+                "Final sentence should be long enough so user doesn't ever reach the end of it"
+            );
+        };
+
+        if correct_word == user_inputed_word {
+            correct_word_count += 1;
+        }
+
+        accuracy = (correct_word_count as f64 / total_word_count as f64) * 100.0;
+    }
+
+    let wpm: f64 = total_word_count as f64 / (total_duration.as_secs_f64() / 60.0);
+
+    return Ok((wpm, accuracy));
+}
+
+fn print_statistics(
+    wpm: f64,
+    accuracy: f64,
+    stdout: &mut std::io::Stdout,
+    current_cursor_row: u16,
+) -> Result<(), String> {
     execute!(
         stdout,
         MoveTo(0, current_cursor_row + 1),
@@ -189,11 +214,10 @@ fn statistics(
     )
     .map_err(|e| e.to_string())?;
 
-    return Ok((wpm, accuracy));
+    return Ok(());
 }
 
 fn starting_message(stdout: &mut std::io::Stdout, final_sentence: &str) -> Result<(), String> {
-    // let your_sentence_message = format!("Your sentence: '{}'\n\r", final_sentence.to_string());
     let first_message: String = "The sentence is:".to_string();
     let first_message_column =
         centered_message_column(first_message.as_str()).map_err(|e| e.to_string())?;
@@ -223,5 +247,6 @@ fn centered_message_column(message: &str) -> Result<u16, String> {
     let (terminal_width, _) = terminal::size().map_err(|e| e.to_string())?;
     let col = terminal_width / 2 - message.len() as u16 / 2;
 
+    // TODO: the text to input will be log and multiple lines. Make it support it.
     return Ok(col);
 }
