@@ -3,14 +3,14 @@ use std::time::{Duration, Instant};
 use std::unreachable;
 
 use crossterm::cursor::MoveTo;
-use crossterm::style::Print;
+use crossterm::style::{Color, Print, ResetColor, SetForegroundColor};
 use crossterm::terminal::Clear;
 use crossterm::terminal::ClearType::{All, FromCursorDown};
 use crossterm::{
     event::{self, Event, KeyCode},
     terminal::{disable_raw_mode, enable_raw_mode},
 };
-use crossterm::{execute, terminal};
+use crossterm::{execute, queue, terminal};
 
 struct RawModeGuard;
 
@@ -29,7 +29,7 @@ impl Drop for RawModeGuard {
 
 pub fn host_race() -> Result<(), String> {
     let _raw_mode = RawModeGuard::new().map_err(|e| e.to_string())?;
-    let typing_duration = Duration::from_secs(6);
+    let typing_duration = Duration::from_secs(20);
 
     let mut stdout = io::stdout();
     let mut user_input = String::new();
@@ -123,45 +123,111 @@ fn render(
     race_started_at: Instant,
     total_seconds: f64,
 ) -> Result<u16, String> {
-    let input_start_col = 0;
+    let (terminal_width, _) = terminal::size().map_err(|e| e.to_string())?;
+    let usable_terminal_width = terminal_width - 4;
+    let input_start_col = 2;
     let input_start_row = 7;
 
-    let (cursor_col, cursor_row) =
-        cursor_position_for_index(cursor_index, input_start_col, input_start_row)?;
+    let (cursor_col, cursor_row) = cursor_position(
+        cursor_index,
+        input_start_col,
+        input_start_row,
+        usable_terminal_width,
+    )?;
 
     let elapsed_seconds = race_started_at.elapsed().as_secs_f64();
-    execute!(
+    queue!(
         stdout,
-        MoveTo(0, 5),
+        MoveTo(2, 5),
         Print(format!(
             "Elapsed: {:.1}s / {:.1}s",
             elapsed_seconds, total_seconds
         )),
-        MoveTo(0, 6),
-        Clear(FromCursorDown),
-        MoveTo(input_start_col, input_start_row),
-        Print(user_input),
-        MoveTo(cursor_col, cursor_row),
+        MoveTo(2, 6),
+        Clear(FromCursorDown)
     )
     .map_err(|e| e.to_string())?;
+
+    render_border(stdout)?;
+    render_wrapped_text(
+        stdout,
+        user_input,
+        input_start_col,
+        input_start_row,
+        usable_terminal_width,
+    )?;
+
+    queue!(stdout, MoveTo(cursor_col, cursor_row)).map_err(|e| e.to_string())?;
 
     stdout.flush().map_err(|e| e.to_string())?;
 
     Ok(cursor_row)
 }
 
-fn cursor_position_for_index(
+fn render_wrapped_text(
+    stdout: &mut std::io::Stdout,
+    user_input: &str,
+    input_start_col: u16,
+    input_start_row: u16,
+    usable_terminal_width: u16,
+) -> Result<(), String> {
+    //
+    for (line_index, chunk) in user_input
+        .as_bytes()
+        .chunks(usable_terminal_width as usize)
+        .enumerate()
+    {
+        let line = std::str::from_utf8(chunk).map_err(|e| e.to_string())?;
+        queue!(
+            stdout,
+            MoveTo(input_start_col, input_start_row + line_index as u16),
+            Print(line),
+        )
+        .map_err(|e| e.to_string())?;
+    }
+
+    queue!(stdout, MoveTo(2, 5),).map_err(|e| e.to_string())?;
+
+    return Ok(());
+}
+
+fn render_border(stdout: &mut std::io::Stdout) -> Result<(), String> {
+    let (terminal_width, terminal_height) = terminal::size().map_err(|e| e.to_string())?;
+
+    let horizontal_border = "-".repeat(terminal_width as usize);
+
+    queue!(
+        stdout,
+        MoveTo(0, 1),
+        Print(&horizontal_border),
+        MoveTo(0, terminal_height),
+        Print(&horizontal_border),
+    )
+    .map_err(|e| e.to_string())?;
+
+    for row in 1..terminal_height {
+        queue!(stdout, MoveTo(0, row), Print('|')).map_err(|e| e.to_string())?;
+        queue!(stdout, MoveTo(terminal_width, row), Print('|')).map_err(|e| e.to_string())?;
+    }
+
+    return Ok(());
+}
+
+fn cursor_position(
     cursor_index: usize,
     input_start_col: u16,
     input_start_row: u16,
+    usable_terminal_width: u16,
 ) -> Result<(u16, u16), String> {
-    let (terminal_width, _) = terminal::size().map_err(|e| e.to_string())?;
+    let usable_width = usable_terminal_width as usize;
 
-    let absolute_col = input_start_col as usize + cursor_index;
-    let row_offset = absolute_col / terminal_width as usize;
-    let col = absolute_col % terminal_width as usize;
+    let row_offset = cursor_index / usable_width;
+    let col_offset = cursor_index % usable_width;
 
-    Ok((col as u16, input_start_row + row_offset as u16))
+    Ok((
+        input_start_col + col_offset as u16,
+        input_start_row + row_offset as u16,
+    ))
 }
 
 fn statistics(
@@ -232,8 +298,10 @@ fn starting_message(stdout: &mut std::io::Stdout, final_sentence: &str) -> Resul
         Clear(All),
         MoveTo(first_message_column, 2),
         Print(first_message),
+        SetForegroundColor(Color::Magenta),
         MoveTo(second_message_column, 3),
         Print(second_message),
+        ResetColor,
         MoveTo(third_message_column, 4),
         Print(third_message),
     )
