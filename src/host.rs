@@ -29,37 +29,41 @@ impl Drop for RawModeGuard {
 
 pub fn host_race() -> Result<(), String> {
     let _raw_mode = RawModeGuard::new().map_err(|e| e.to_string())?;
-    let typing_duration = Duration::from_secs(20);
+    let typing_duration = Duration::from_secs(5);
+    let (terminal_width, _) = terminal::size().map_err(|e| e.to_string())?;
+    let usable_terminal_width = terminal_width - 4;
 
     let mut stdout = io::stdout();
     let mut user_input = String::new();
-    let final_sentence = "The brown fox jumps over bla The brown fox jumps over bla";
-    let mut cursor_row = 0;
+    let final_sentence =
+        "The brown fox jumps over bla The brown fox jumps fox jumps over bla over bla bla blaaaa";
     let mut cursor_index = 0;
-    starting_message(&mut stdout, final_sentence)?;
+    starting_message(&mut stdout, final_sentence, usable_terminal_width)?;
 
     let race_started_at = Instant::now();
 
-    cursor_row = render(
+    render(
         &mut stdout,
         final_sentence,
         &user_input,
         cursor_index,
         race_started_at,
         typing_duration.as_secs_f64(),
+        usable_terminal_width,
     )?;
 
     loop {
         if race_started_at.elapsed() >= typing_duration {
             break;
         }
-        cursor_row = render(
+        render(
             &mut stdout,
             final_sentence,
             &user_input,
             cursor_index,
             race_started_at,
             typing_duration.as_secs_f64(),
+            usable_terminal_width,
         )?;
 
         if !event::poll(Duration::from_millis(100)).map_err(|e| e.to_string())? {
@@ -96,21 +100,21 @@ pub fn host_race() -> Result<(), String> {
             },
             _ => {}
         }
-        cursor_row = render(
+
+        render(
             &mut stdout,
             final_sentence,
             &user_input,
             cursor_index,
             race_started_at,
             typing_duration.as_secs_f64(),
+            usable_terminal_width,
         )?;
     }
 
-    // end time
-
     let (wpm, accuracy) = statistics(final_sentence, &user_input.to_string(), typing_duration)?;
 
-    print_statistics(wpm, accuracy, &mut stdout, cursor_row)?;
+    print_statistics(wpm, accuracy, &mut stdout, usable_terminal_width)?;
 
     return Ok(());
 }
@@ -122,9 +126,8 @@ fn render(
     cursor_index: usize,
     race_started_at: Instant,
     total_seconds: f64,
+    usable_terminal_width: u16,
 ) -> Result<u16, String> {
-    let (terminal_width, _) = terminal::size().map_err(|e| e.to_string())?;
-    let usable_terminal_width = terminal_width - 4;
     let input_start_col = 2;
     let input_start_row = 7;
 
@@ -198,6 +201,7 @@ fn render_border(stdout: &mut std::io::Stdout) -> Result<(), String> {
 
     queue!(
         stdout,
+        SetForegroundColor(Color::Black),
         MoveTo(0, 1),
         Print(&horizontal_border),
         MoveTo(0, terminal_height),
@@ -209,6 +213,7 @@ fn render_border(stdout: &mut std::io::Stdout) -> Result<(), String> {
         queue!(stdout, MoveTo(0, row), Print('|')).map_err(|e| e.to_string())?;
         queue!(stdout, MoveTo(terminal_width, row), Print('|')).map_err(|e| e.to_string())?;
     }
+    queue!(stdout, ResetColor).map_err(|e| e.to_string())?;
 
     return Ok(());
 }
@@ -266,33 +271,58 @@ fn print_statistics(
     wpm: f64,
     accuracy: f64,
     stdout: &mut std::io::Stdout,
-    current_cursor_row: u16,
+    usable_terminal_width: u16,
 ) -> Result<(), String> {
-    execute!(
+    let (_, terminal_height) = terminal::size().map_err(|e| e.to_string())?;
+    // le
+    let first_message: String = "Finished!".to_string();
+    let first_message_column =
+        centered_message_column(first_message.as_str(), usable_terminal_width)
+            .map_err(|e| e.to_string())?;
+    let second_message: String = format!("Words per minute: {:.1}", wpm).to_string();
+    let second_message_column =
+        centered_message_column(second_message.as_str(), usable_terminal_width)
+            .map_err(|e| e.to_string())?;
+    let third_message: String = format!("Accuracy: {:.1}%", accuracy).to_string();
+    let third_message_column =
+        centered_message_column(third_message.as_str(), usable_terminal_width)
+            .map_err(|e| e.to_string())?;
+
+    queue!(
         stdout,
-        MoveTo(0, current_cursor_row + 1),
-        Print("------"),
-        MoveTo(0, current_cursor_row + 2),
-        Print(format!("Words per minute: {:.1}", wpm)),
-        MoveTo(0, current_cursor_row + 3),
-        Print(format!("Accuracy: {:.1}", accuracy)),
-        MoveTo(0, current_cursor_row + 4)
+        MoveTo(first_message_column, terminal_height - 4),
+        Print(first_message),
+        MoveTo(second_message_column, terminal_height - 3),
+        Print(second_message),
+        MoveTo(third_message_column, terminal_height - 2),
+        Print(third_message),
+        MoveTo(0, terminal_height - 1),
+        Print("\r\n"),
     )
     .map_err(|e| e.to_string())?;
+
+    stdout.flush().map_err(|e| e.to_string())?;
 
     return Ok(());
 }
 
-fn starting_message(stdout: &mut std::io::Stdout, final_sentence: &str) -> Result<(), String> {
+fn starting_message(
+    stdout: &mut std::io::Stdout,
+    final_sentence: &str,
+    usable_terminal_width: u16,
+) -> Result<(), String> {
     let first_message: String = "The sentence is:".to_string();
     let first_message_column =
-        centered_message_column(first_message.as_str()).map_err(|e| e.to_string())?;
+        centered_message_column(first_message.as_str(), usable_terminal_width)
+            .map_err(|e| e.to_string())?;
     let second_message: String = format!("'{final_sentence}'");
     let second_message_column =
-        centered_message_column(second_message.as_str()).map_err(|e| e.to_string())?;
+        centered_message_column(second_message.as_str(), usable_terminal_width)
+            .map_err(|e| e.to_string())?;
     let third_message = "Start whenever you're ready!".to_string();
     let third_message_column =
-        centered_message_column(third_message.as_str()).map_err(|e| e.to_string())?;
+        centered_message_column(third_message.as_str(), usable_terminal_width)
+            .map_err(|e| e.to_string())?;
     execute!(
         stdout,
         Clear(All),
@@ -311,10 +341,9 @@ fn starting_message(stdout: &mut std::io::Stdout, final_sentence: &str) -> Resul
 }
 
 // returns column index, so the provided 'message' is centered
-fn centered_message_column(message: &str) -> Result<u16, String> {
-    let (terminal_width, _) = terminal::size().map_err(|e| e.to_string())?;
-    let col = terminal_width / 2 - message.len() as u16 / 2;
-
-    // TODO: the text to input will be log and multiple lines. Make it support it.
+fn centered_message_column(message: &str, usable_terminal_width: u16) -> Result<u16, String> {
+    let col = usable_terminal_width / 2 - message.len() as u16 / 2;
+    // 88 / 2 - 88 / 2
+    // TODO: the text to input will be long and multiple lines. Make it support it.
     return Ok(col);
 }
