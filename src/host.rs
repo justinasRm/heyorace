@@ -341,12 +341,11 @@ fn starting_message(stdout: &mut std::io::Stdout, final_sentence: &str) -> Resul
     return Ok(());
 }
 
-// returns column index, so the provided 'message' is centered
+// Need to rework - maybe a function that takes in strings, takes the starting row, and prints them all out centered and returns the final (column, row)?
 fn centered_message_column(message: &str) -> Result<u16, String> {
     let usable_terminal_width = USABLE_TERMINAL_WIDTH.load(Ordering::Relaxed);
 
-    let col = (usable_terminal_width / 2 - message.len() as u16 / 2)
-        + LEFT_OFFSET.load(Ordering::Relaxed);
-    // TODO: the text to input will be long and multiple lines. Make it support it.
+    let col =
+        usable_terminal_width / 2 - message.len() as u16 / 2 + LEFT_OFFSET.load(Ordering::Relaxed);
     return Ok(col);
 }
