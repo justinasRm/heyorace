@@ -11,6 +11,11 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode},
 };
 use crossterm::{execute, queue, terminal};
+use std::sync::atomic::{AtomicU16, Ordering};
+
+static USABLE_TERMINAL_WIDTH: AtomicU16 = AtomicU16::new(0);
+static USABLE_TERMINAL_HEIGHT: AtomicU16 = AtomicU16::new(0);
+static LEFT_OFFSET: AtomicU16 = AtomicU16::new(2);
 
 struct RawModeGuard;
 
@@ -27,18 +32,26 @@ impl Drop for RawModeGuard {
     }
 }
 
+fn set_initial_terminal_dimensions() -> Result<(), String> {
+    let (terminal_width, terminal_height) = terminal::size().map_err(|e| e.to_string())?;
+    let usable_terminal_width = terminal_width - 4;
+    let usable_terminal_height = terminal_height - 2;
+    USABLE_TERMINAL_WIDTH.store(usable_terminal_width, Ordering::Relaxed);
+    USABLE_TERMINAL_HEIGHT.store(usable_terminal_height, Ordering::Relaxed);
+
+    return Ok(());
+}
+
 pub fn host_race() -> Result<(), String> {
     let _raw_mode = RawModeGuard::new().map_err(|e| e.to_string())?;
     let typing_duration = Duration::from_secs(5);
-    let (terminal_width, _) = terminal::size().map_err(|e| e.to_string())?;
-    let usable_terminal_width = terminal_width - 4;
+    set_initial_terminal_dimensions()?;
 
     let mut stdout = io::stdout();
     let mut user_input = String::new();
-    let final_sentence =
-        "The brown fox jumps over bla The brown fox jumps fox jumps over bla over bla bla blaaaa";
+    let final_sentence = "The brown fox jumps over bla The brown fox jumps fox jumps over bla ";
     let mut cursor_index = 0;
-    starting_message(&mut stdout, final_sentence, usable_terminal_width)?;
+    starting_message(&mut stdout, final_sentence)?;
 
     let race_started_at = Instant::now();
 
@@ -49,7 +62,6 @@ pub fn host_race() -> Result<(), String> {
         cursor_index,
         race_started_at,
         typing_duration.as_secs_f64(),
-        usable_terminal_width,
     )?;
 
     loop {
@@ -63,7 +75,6 @@ pub fn host_race() -> Result<(), String> {
             cursor_index,
             race_started_at,
             typing_duration.as_secs_f64(),
-            usable_terminal_width,
         )?;
 
         if !event::poll(Duration::from_millis(100)).map_err(|e| e.to_string())? {
@@ -98,6 +109,10 @@ pub fn host_race() -> Result<(), String> {
                 KeyCode::Esc => break,
                 _ => {}
             },
+            Event::Resize(w, h) => {
+                USABLE_TERMINAL_WIDTH.store(w - 4, Ordering::Relaxed);
+                USABLE_TERMINAL_HEIGHT.store(h - 2, Ordering::Relaxed);
+            }
             _ => {}
         }
 
@@ -108,13 +123,12 @@ pub fn host_race() -> Result<(), String> {
             cursor_index,
             race_started_at,
             typing_duration.as_secs_f64(),
-            usable_terminal_width,
         )?;
     }
 
     let (wpm, accuracy) = statistics(final_sentence, &user_input.to_string(), typing_duration)?;
 
-    print_statistics(wpm, accuracy, &mut stdout, usable_terminal_width)?;
+    print_statistics(wpm, accuracy, &mut stdout)?;
 
     return Ok(());
 }
@@ -126,10 +140,10 @@ fn render(
     cursor_index: usize,
     race_started_at: Instant,
     total_seconds: f64,
-    usable_terminal_width: u16,
 ) -> Result<u16, String> {
     let input_start_col = 2;
     let input_start_row = 7;
+    let usable_terminal_width = USABLE_TERMINAL_WIDTH.load(Ordering::Relaxed);
 
     let (cursor_col, cursor_row) = cursor_position(
         cursor_index,
@@ -267,26 +281,18 @@ fn statistics(
     return Ok((wpm, accuracy));
 }
 
-fn print_statistics(
-    wpm: f64,
-    accuracy: f64,
-    stdout: &mut std::io::Stdout,
-    usable_terminal_width: u16,
-) -> Result<(), String> {
+fn print_statistics(wpm: f64, accuracy: f64, stdout: &mut std::io::Stdout) -> Result<(), String> {
     let (_, terminal_height) = terminal::size().map_err(|e| e.to_string())?;
     // le
     let first_message: String = "Finished!".to_string();
     let first_message_column =
-        centered_message_column(first_message.as_str(), usable_terminal_width)
-            .map_err(|e| e.to_string())?;
+        centered_message_column(first_message.as_str()).map_err(|e| e.to_string())?;
     let second_message: String = format!("Words per minute: {:.1}", wpm).to_string();
     let second_message_column =
-        centered_message_column(second_message.as_str(), usable_terminal_width)
-            .map_err(|e| e.to_string())?;
+        centered_message_column(second_message.as_str()).map_err(|e| e.to_string())?;
     let third_message: String = format!("Accuracy: {:.1}%", accuracy).to_string();
     let third_message_column =
-        centered_message_column(third_message.as_str(), usable_terminal_width)
-            .map_err(|e| e.to_string())?;
+        centered_message_column(third_message.as_str()).map_err(|e| e.to_string())?;
 
     queue!(
         stdout,
@@ -306,23 +312,18 @@ fn print_statistics(
     return Ok(());
 }
 
-fn starting_message(
-    stdout: &mut std::io::Stdout,
-    final_sentence: &str,
-    usable_terminal_width: u16,
-) -> Result<(), String> {
+fn starting_message(stdout: &mut std::io::Stdout, final_sentence: &str) -> Result<(), String> {
+    let usable_terminal_width = USABLE_TERMINAL_WIDTH.load(Ordering::Relaxed);
+
     let first_message: String = "The sentence is:".to_string();
     let first_message_column =
-        centered_message_column(first_message.as_str(), usable_terminal_width)
-            .map_err(|e| e.to_string())?;
+        centered_message_column(first_message.as_str()).map_err(|e| e.to_string())?;
     let second_message: String = format!("'{final_sentence}'");
     let second_message_column =
-        centered_message_column(second_message.as_str(), usable_terminal_width)
-            .map_err(|e| e.to_string())?;
+        centered_message_column(second_message.as_str()).map_err(|e| e.to_string())?;
     let third_message = "Start whenever you're ready!".to_string();
     let third_message_column =
-        centered_message_column(third_message.as_str(), usable_terminal_width)
-            .map_err(|e| e.to_string())?;
+        centered_message_column(third_message.as_str()).map_err(|e| e.to_string())?;
     execute!(
         stdout,
         Clear(All),
@@ -341,9 +342,11 @@ fn starting_message(
 }
 
 // returns column index, so the provided 'message' is centered
-fn centered_message_column(message: &str, usable_terminal_width: u16) -> Result<u16, String> {
-    let col = usable_terminal_width / 2 - message.len() as u16 / 2;
-    // 88 / 2 - 88 / 2
+fn centered_message_column(message: &str) -> Result<u16, String> {
+    let usable_terminal_width = USABLE_TERMINAL_WIDTH.load(Ordering::Relaxed);
+
+    let col = (usable_terminal_width / 2 - message.len() as u16 / 2)
+        + LEFT_OFFSET.load(Ordering::Relaxed);
     // TODO: the text to input will be long and multiple lines. Make it support it.
     return Ok(col);
 }
