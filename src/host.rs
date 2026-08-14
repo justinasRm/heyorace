@@ -1,4 +1,5 @@
 use std::io::{self, Write};
+use std::thread::sleep;
 use std::time::{Duration, Instant};
 use std::unreachable;
 
@@ -12,8 +13,10 @@ use crossterm::{
     event::{self, Event, KeyCode},
     terminal::{disable_raw_mode, enable_raw_mode},
 };
-use crossterm::{queue, terminal};
+use crossterm::{execute, queue, terminal};
 use std::sync::atomic::{AtomicU16, Ordering};
+
+use crate::get_sentence;
 
 static USABLE_TERMINAL_WIDTH: AtomicU16 = AtomicU16::new(0);
 static USABLE_TERMINAL_HEIGHT: AtomicU16 = AtomicU16::new(0);
@@ -27,6 +30,11 @@ const CUSTOM_FOREGROUND_COLOR: crossterm::style::Color = Color::Rgb {
     r: 254,
     g: 231,
     b: 21,
+};
+const CUSTOM_FOREGROUND_COLOR_DARK: crossterm::style::Color = Color::Rgb {
+    r: 122,
+    g: 110,
+    b: 1,
 };
 
 struct RawModeGuard;
@@ -56,26 +64,18 @@ fn set_initial_terminal_dimensions() -> Result<(), String> {
 
 pub fn host_race() -> Result<(), String> {
     let _raw_mode = RawModeGuard::new().map_err(|e| e.to_string())?;
-    let typing_duration = Duration::from_secs(5);
+    let typing_duration = Duration::from_secs(60);
     set_initial_terminal_dimensions()?;
 
     let mut stdout = io::stdout();
+    execute!(&mut stdout, Clear(All)).map_err(|e| e.to_string())?;
+    render_border(&mut stdout)?;
     let mut user_input = String::new();
-    let final_sentence = "The brown fox jumps over bla one to three four five six seven eight nine ten eleven twelve";
+    let correct_sentence = &get_sentence::sentence();
     let mut cursor_index = 0;
-    let main_render_start_row = starting_message(&mut stdout, final_sentence)? + 1;
+    print_countdown(&mut stdout)?;
 
     let race_started_at = Instant::now();
-
-    render(
-        &mut stdout,
-        final_sentence,
-        &user_input,
-        cursor_index,
-        race_started_at,
-        typing_duration.as_secs_f64(),
-        main_render_start_row,
-    )?;
 
     loop {
         if race_started_at.elapsed() >= typing_duration {
@@ -83,12 +83,12 @@ pub fn host_race() -> Result<(), String> {
         }
         render(
             &mut stdout,
-            final_sentence,
+            correct_sentence,
             &user_input,
             cursor_index,
             race_started_at,
             typing_duration.as_secs_f64(),
-            main_render_start_row,
+            3,
         )?;
 
         if !event::poll(Duration::from_millis(100)).map_err(|e| e.to_string())? {
@@ -97,7 +97,6 @@ pub fn host_race() -> Result<(), String> {
 
         let event = event::read().map_err(|e| e.to_string())?;
 
-        // redraw
         match event {
             Event::Key(key_event) => match key_event.code {
                 KeyCode::Char(ch) => {
@@ -132,16 +131,16 @@ pub fn host_race() -> Result<(), String> {
 
         render(
             &mut stdout,
-            final_sentence,
+            correct_sentence,
             &user_input,
             cursor_index,
             race_started_at,
             typing_duration.as_secs_f64(),
-            main_render_start_row,
+            3,
         )?;
     }
 
-    let (wpm, accuracy) = statistics(final_sentence, &user_input.to_string(), typing_duration)?;
+    let (wpm, accuracy) = statistics(correct_sentence, &user_input.to_string(), typing_duration)?;
 
     print_statistics(wpm, accuracy, &mut stdout)?;
 
@@ -150,44 +149,46 @@ pub fn host_race() -> Result<(), String> {
 
 fn render(
     stdout: &mut std::io::Stdout,
-    final_sentence: &str,
+    correct_sentence: &str,
     user_input: &str,
     cursor_index: usize,
     race_started_at: Instant,
     total_seconds: f64,
-    main_render_start_row: u16,
+    first_free_row: u16,
 ) -> Result<u16, String> {
     let input_start_col = 2;
-    let mut first_free_row = main_render_start_row;
+    let input_start_row = first_free_row + 3;
     let usable_terminal_width = USABLE_TERMINAL_WIDTH.load(Ordering::Relaxed);
     let elapsed_seconds = race_started_at.elapsed().as_secs_f64();
+    let elapsed_str = format!("Elapsed: {:.1}s / {:.1}s", elapsed_seconds, total_seconds);
+    queue!(stdout, Clear(FromCursorDown)).map_err(|e| e.to_string())?;
 
-    queue!(
+    // elapsed_str is centered. Maybe on left I could show WPM, on right I could show accuracy in real time?
+    queue_centered_message(
+        elapsed_str.as_str(),
         stdout,
-        MoveTo(2, first_free_row + 1),
-        Print(format!(
-            "Elapsed: {:.1}s / {:.1}s",
-            elapsed_seconds, total_seconds
-        )),
-        MoveTo(2, first_free_row + 2),
-        Clear(FromCursorDown)
-    )
-    .map_err(|e| e.to_string())?;
-    first_free_row += 3;
+        // leaving space, so + 1.
+        first_free_row + 1,
+        None,
+        None,
+        false,
+    )?;
 
     let (cursor_col, cursor_row) = cursor_position(
         cursor_index,
         input_start_col,
-        first_free_row,
+        input_start_row,
         usable_terminal_width,
     )?;
 
     render_border(stdout)?;
+
     render_user_typing(
         stdout,
         user_input,
+        correct_sentence,
         input_start_col,
-        first_free_row,
+        input_start_row,
         usable_terminal_width,
     )?;
 
@@ -202,11 +203,31 @@ fn render(
 fn render_user_typing(
     stdout: &mut std::io::Stdout,
     user_input: &str,
+    correct_sentence: &str,
     input_start_col: u16,
     input_start_row: u16,
     usable_terminal_width: u16,
 ) -> Result<(), String> {
-    //
+    // first rendering all correct_sentence lines for the (under text?) background, so its easier to type on top of it
+    for (line_index, chunk) in correct_sentence
+        .as_bytes()
+        .chunks(usable_terminal_width as usize)
+        .enumerate()
+    {
+        let line = std::str::from_utf8(chunk).map_err(|e| e.to_string())?;
+        queue!(
+            stdout,
+            MoveTo(input_start_col, input_start_row + line_index as u16),
+            SetForegroundColor(CUSTOM_FOREGROUND_COLOR_DARK),
+            Print(line),
+            SetForegroundColor(Color::Reset)
+        )
+        .map_err(|e| e.to_string())?;
+    }
+
+    // then the real user input on top of it.
+    // TODO: dont render rows, but render characters, so I can make them red if it doesnt match the character
+    // from correct_sentence
     for (line_index, chunk) in user_input
         .as_bytes()
         .chunks(usable_terminal_width as usize)
@@ -216,7 +237,9 @@ fn render_user_typing(
         queue!(
             stdout,
             MoveTo(input_start_col, input_start_row + line_index as u16),
+            SetForegroundColor(CUSTOM_FOREGROUND_COLOR),
             Print(line),
+            SetForegroundColor(Color::Reset)
         )
         .map_err(|e| e.to_string())?;
     }
@@ -268,7 +291,7 @@ fn cursor_position(
 }
 
 fn statistics(
-    final_sentence: &str,
+    correct_sentence: &str,
     user_input: &str,
     total_duration: Duration,
 ) -> Result<(f64, f64), String> {
@@ -277,11 +300,11 @@ fn statistics(
 
     let user_input_words: Vec<&str> = user_input.split(" ").collect();
     let total_word_count = user_input_words.len();
-    let final_sentence_words: Vec<&str> = final_sentence.split(" ").collect();
+    let correct_sentence_words: Vec<&str> = correct_sentence.split(" ").collect();
 
     for (i, user_inputed_word) in user_input_words.iter().enumerate() {
         //
-        let Some(correct_word) = final_sentence_words.get(i) else {
+        let Some(correct_word) = correct_sentence_words.get(i) else {
             unreachable!(
                 "Final sentence should be long enough so user doesn't ever reach the end of it"
             );
@@ -340,46 +363,29 @@ fn print_statistics(wpm: f64, accuracy: f64, stdout: &mut std::io::Stdout) -> Re
     return Ok(());
 }
 
-fn starting_message(stdout: &mut std::io::Stdout, final_sentence: &str) -> Result<u16, String> {
-    queue!(stdout, Clear(All)).map_err(|e| e.to_string())?;
+fn print_countdown(stdout: &mut std::io::Stdout) -> Result<(), String> {
+    let mut message = String::new();
+    for i in 0..4 {
+        //
+        if i == 3 {
+            message.push_str("GO!!@@!");
+        } else {
+            message.push_str(&format!("{}... ", 3 - i));
+        };
+        queue_centered_message(
+            &message,
+            stdout,
+            2,
+            Some(CUSTOM_FOREGROUND_COLOR),
+            None,
+            true,
+        )?;
+        queue!(stdout, SetForegroundColor(Color::Reset)).map_err(|e| e.to_string())?;
+        stdout.flush().map_err(|e| e.to_string())?;
+        sleep(Duration::from_secs(1));
+    }
 
-    let first_message: String = "The sentence is:".to_string();
-    let first_message_ended_at_row = queue_centered_message(
-        first_message.as_str(),
-        stdout,
-        2,
-        // #02343F
-        Some(CUSTOM_FOREGROUND_COLOR),
-        Some(CUSTOM_BACKGROUND_COLOR),
-        false,
-    )
-    // 249, 235, 222
-    .map_err(|e| e.to_string())?;
-    let second_message: String = format!("'{final_sentence}'");
-    let second_message_ended_at_row = queue_centered_message(
-        second_message.as_str(),
-        stdout,
-        first_message_ended_at_row + 1,
-        Some(CUSTOM_FOREGROUND_COLOR),
-        Some(CUSTOM_BACKGROUND_COLOR),
-        true,
-    )
-    .map_err(|e| e.to_string())?;
-    let third_message = "Start whenever you're ready!".to_string();
-    let third_message_ended_at_row = queue_centered_message(
-        third_message.as_str(),
-        stdout,
-        second_message_ended_at_row + 1,
-        Some(CUSTOM_FOREGROUND_COLOR),
-        Some(CUSTOM_BACKGROUND_COLOR),
-        false,
-    )
-    .map_err(|e| e.to_string())?;
-
-    // queue!(stdout, Clear(All)).map_err(|e| e.to_string())?;
-    stdout.flush().map_err(|e| e.to_string())?;
-
-    return Ok(third_message_ended_at_row);
+    Ok(())
 }
 
 // Need to rework - maybe a function that takes in strings, takes the starting row, and prints
