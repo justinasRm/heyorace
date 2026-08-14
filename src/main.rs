@@ -5,7 +5,8 @@ mod invitee;
 
 fn main() -> Result<(), String> {
     let args: Vec<String> = env::args().skip(1).collect();
-
+    // TODO: need to enforce minimal terminal height and width.
+    // TODO: need an instructions page first.
     match args.as_slice() {
         [cmd] if cmd == "host" => match host::host_race() {
             Ok(()) => Ok(()),

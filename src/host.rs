@@ -36,6 +36,11 @@ const CUSTOM_FOREGROUND_COLOR_DARK: crossterm::style::Color = Color::Rgb {
     g: 110,
     b: 1,
 };
+const CUSTOM_ERROR_COLOR: crossterm::style::Color = Color::Rgb {
+    r: 220,
+    g: 50,
+    b: 47,
+};
 
 struct RawModeGuard;
 
@@ -100,8 +105,10 @@ pub fn host_race() -> Result<(), String> {
         match event {
             Event::Key(key_event) => match key_event.code {
                 KeyCode::Char(ch) => {
-                    user_input.insert(cursor_index, ch);
-                    cursor_index += 1;
+                    if ch.is_ascii() {
+                        user_input.insert(cursor_index, ch);
+                        cursor_index += 1;
+                    }
                 }
                 KeyCode::Backspace => {
                     if cursor_index > 0 {
@@ -224,27 +231,48 @@ fn render_user_typing(
         )
         .map_err(|e| e.to_string())?;
     }
+    let correct_chars = correct_sentence.as_bytes();
+    let correct_sentence_lines = correct_chars
+        .chunks(usable_terminal_width as usize)
+        .collect::<Vec<&[u8]>>();
 
     // then the real user input on top of it.
-    // TODO: dont render rows, but render characters, so I can make them red if it doesnt match the character
-    // from correct_sentence
     for (line_index, chunk) in user_input
         .as_bytes()
         .chunks(usable_terminal_width as usize)
         .enumerate()
     {
-        let line = std::str::from_utf8(chunk).map_err(|e| e.to_string())?;
-        queue!(
-            stdout,
-            MoveTo(input_start_col, input_start_row + line_index as u16),
-            SetForegroundColor(CUSTOM_FOREGROUND_COLOR),
-            Print(line),
-            SetForegroundColor(Color::Reset)
-        )
-        .map_err(|e| e.to_string())?;
+        for (inputting_index, inputting_char) in chunk.iter().enumerate() {
+            let mut is_inputed_char_correct: bool = false;
+            if line_index < correct_sentence_lines.len() {
+                let correct_line = correct_sentence_lines[line_index];
+                if inputting_index < correct_line.len() {
+                    let correct_char = correct_line[inputting_index];
+                    if correct_char == *inputting_char {
+                        is_inputed_char_correct = true;
+                    }
+                }
+            }
+
+            queue!(
+                stdout,
+                MoveTo(
+                    input_start_col + inputting_index as u16,
+                    input_start_row + line_index as u16
+                ),
+                SetForegroundColor(if is_inputed_char_correct {
+                    CUSTOM_FOREGROUND_COLOR
+                } else {
+                    CUSTOM_ERROR_COLOR
+                }),
+                Print(*inputting_char as char)
+            )
+            .map_err(|e| e.to_string())?;
+        }
     }
 
-    queue!(stdout, MoveTo(2, 5),).map_err(|e| e.to_string())?;
+    queue!(stdout, MoveTo(2, 5), SetForegroundColor(Color::Reset)).map_err(|e| e.to_string())?;
+    stdout.flush().map_err(|e| e.to_string())?;
 
     return Ok(());
 }
