@@ -3,19 +3,31 @@ use std::time::{Duration, Instant};
 use std::unreachable;
 
 use crossterm::cursor::MoveTo;
-use crossterm::style::{Color, Print, ResetColor, SetForegroundColor};
+use crossterm::style::{
+    Color, Print, ResetColor, SetAttribute, SetBackgroundColor, SetForegroundColor,
+};
 use crossterm::terminal::Clear;
 use crossterm::terminal::ClearType::{All, FromCursorDown};
 use crossterm::{
     event::{self, Event, KeyCode},
     terminal::{disable_raw_mode, enable_raw_mode},
 };
-use crossterm::{execute, queue, terminal};
+use crossterm::{queue, terminal};
 use std::sync::atomic::{AtomicU16, Ordering};
 
 static USABLE_TERMINAL_WIDTH: AtomicU16 = AtomicU16::new(0);
 static USABLE_TERMINAL_HEIGHT: AtomicU16 = AtomicU16::new(0);
 static LEFT_OFFSET: AtomicU16 = AtomicU16::new(2);
+const CUSTOM_BACKGROUND_COLOR: crossterm::style::Color = Color::Rgb {
+    r: 16,
+    g: 24,
+    b: 32,
+};
+const CUSTOM_FOREGROUND_COLOR: crossterm::style::Color = Color::Rgb {
+    r: 254,
+    g: 231,
+    b: 21,
+};
 
 struct RawModeGuard;
 
@@ -49,9 +61,9 @@ pub fn host_race() -> Result<(), String> {
 
     let mut stdout = io::stdout();
     let mut user_input = String::new();
-    let final_sentence = "The brown fox jumps over bla The brown fox jumps fox jumps over bla ";
+    let final_sentence = "The brown fox jumps over bla one to three four five six seven eight nine ten eleven twelve";
     let mut cursor_index = 0;
-    starting_message(&mut stdout, final_sentence)?;
+    let main_render_start_row = starting_message(&mut stdout, final_sentence)? + 1;
 
     let race_started_at = Instant::now();
 
@@ -62,6 +74,7 @@ pub fn host_race() -> Result<(), String> {
         cursor_index,
         race_started_at,
         typing_duration.as_secs_f64(),
+        main_render_start_row,
     )?;
 
     loop {
@@ -75,6 +88,7 @@ pub fn host_race() -> Result<(), String> {
             cursor_index,
             race_started_at,
             typing_duration.as_secs_f64(),
+            main_render_start_row,
         )?;
 
         if !event::poll(Duration::from_millis(100)).map_err(|e| e.to_string())? {
@@ -123,6 +137,7 @@ pub fn host_race() -> Result<(), String> {
             cursor_index,
             race_started_at,
             typing_duration.as_secs_f64(),
+            main_render_start_row,
         )?;
     }
 
@@ -140,37 +155,39 @@ fn render(
     cursor_index: usize,
     race_started_at: Instant,
     total_seconds: f64,
+    main_render_start_row: u16,
 ) -> Result<u16, String> {
     let input_start_col = 2;
-    let input_start_row = 7;
+    let mut first_free_row = main_render_start_row;
     let usable_terminal_width = USABLE_TERMINAL_WIDTH.load(Ordering::Relaxed);
-
-    let (cursor_col, cursor_row) = cursor_position(
-        cursor_index,
-        input_start_col,
-        input_start_row,
-        usable_terminal_width,
-    )?;
-
     let elapsed_seconds = race_started_at.elapsed().as_secs_f64();
+
     queue!(
         stdout,
-        MoveTo(2, 5),
+        MoveTo(2, first_free_row + 1),
         Print(format!(
             "Elapsed: {:.1}s / {:.1}s",
             elapsed_seconds, total_seconds
         )),
-        MoveTo(2, 6),
+        MoveTo(2, first_free_row + 2),
         Clear(FromCursorDown)
     )
     .map_err(|e| e.to_string())?;
+    first_free_row += 3;
+
+    let (cursor_col, cursor_row) = cursor_position(
+        cursor_index,
+        input_start_col,
+        first_free_row,
+        usable_terminal_width,
+    )?;
 
     render_border(stdout)?;
-    render_wrapped_text(
+    render_user_typing(
         stdout,
         user_input,
         input_start_col,
-        input_start_row,
+        first_free_row,
         usable_terminal_width,
     )?;
 
@@ -181,7 +198,8 @@ fn render(
     Ok(cursor_row)
 }
 
-fn render_wrapped_text(
+// respects cli border, doesnt center.
+fn render_user_typing(
     stdout: &mut std::io::Stdout,
     user_input: &str,
     input_start_col: u16,
@@ -283,69 +301,134 @@ fn statistics(
 
 fn print_statistics(wpm: f64, accuracy: f64, stdout: &mut std::io::Stdout) -> Result<(), String> {
     let (_, terminal_height) = terminal::size().map_err(|e| e.to_string())?;
-    // le
-    let first_message: String = "Finished!".to_string();
-    let first_message_column =
-        centered_message_column(first_message.as_str()).map_err(|e| e.to_string())?;
-    let second_message: String = format!("Words per minute: {:.1}", wpm).to_string();
-    let second_message_column =
-        centered_message_column(second_message.as_str()).map_err(|e| e.to_string())?;
-    let third_message: String = format!("Accuracy: {:.1}%", accuracy).to_string();
-    let third_message_column =
-        centered_message_column(third_message.as_str()).map_err(|e| e.to_string())?;
 
-    queue!(
+    let first_message: String = "Finished!".to_string();
+    queue_centered_message(
+        first_message.as_str(),
         stdout,
-        MoveTo(first_message_column, terminal_height - 4),
-        Print(first_message),
-        MoveTo(second_message_column, terminal_height - 3),
-        Print(second_message),
-        MoveTo(third_message_column, terminal_height - 2),
-        Print(third_message),
-        MoveTo(0, terminal_height - 1),
-        Print("\r\n"),
+        terminal_height - 4,
+        Some(CUSTOM_FOREGROUND_COLOR),
+        Some(CUSTOM_BACKGROUND_COLOR),
+        false,
     )
     .map_err(|e| e.to_string())?;
+    let second_message: String = format!("Words per minute: {:.1}", wpm).to_string();
+    queue_centered_message(
+        second_message.as_str(),
+        stdout,
+        terminal_height - 3,
+        Some(CUSTOM_FOREGROUND_COLOR),
+        Some(CUSTOM_BACKGROUND_COLOR),
+        true,
+    )
+    .map_err(|e| e.to_string())?;
+    let third_message: String = format!("Accuracy: {:.1}%", accuracy).to_string();
+    queue_centered_message(
+        third_message.as_str(),
+        stdout,
+        terminal_height - 2,
+        Some(CUSTOM_FOREGROUND_COLOR),
+        Some(CUSTOM_BACKGROUND_COLOR),
+        true,
+    )
+    .map_err(|e| e.to_string())?;
+
+    queue!(stdout, MoveTo(0, terminal_height - 1), Print("\r\n"),).map_err(|e| e.to_string())?;
 
     stdout.flush().map_err(|e| e.to_string())?;
 
     return Ok(());
 }
 
-fn starting_message(stdout: &mut std::io::Stdout, final_sentence: &str) -> Result<(), String> {
-    let usable_terminal_width = USABLE_TERMINAL_WIDTH.load(Ordering::Relaxed);
+fn starting_message(stdout: &mut std::io::Stdout, final_sentence: &str) -> Result<u16, String> {
+    queue!(stdout, Clear(All)).map_err(|e| e.to_string())?;
 
     let first_message: String = "The sentence is:".to_string();
-    let first_message_column =
-        centered_message_column(first_message.as_str()).map_err(|e| e.to_string())?;
-    let second_message: String = format!("'{final_sentence}'");
-    let second_message_column =
-        centered_message_column(second_message.as_str()).map_err(|e| e.to_string())?;
-    let third_message = "Start whenever you're ready!".to_string();
-    let third_message_column =
-        centered_message_column(third_message.as_str()).map_err(|e| e.to_string())?;
-    execute!(
+    let first_message_ended_at_row = queue_centered_message(
+        first_message.as_str(),
         stdout,
-        Clear(All),
-        MoveTo(first_message_column, 2),
-        Print(first_message),
-        SetForegroundColor(Color::Magenta),
-        MoveTo(second_message_column, 3),
-        Print(second_message),
-        ResetColor,
-        MoveTo(third_message_column, 4),
-        Print(third_message),
+        2,
+        // #02343F
+        Some(CUSTOM_FOREGROUND_COLOR),
+        Some(CUSTOM_BACKGROUND_COLOR),
+        false,
+    )
+    // 249, 235, 222
+    .map_err(|e| e.to_string())?;
+    let second_message: String = format!("'{final_sentence}'");
+    let second_message_ended_at_row = queue_centered_message(
+        second_message.as_str(),
+        stdout,
+        first_message_ended_at_row + 1,
+        Some(CUSTOM_FOREGROUND_COLOR),
+        Some(CUSTOM_BACKGROUND_COLOR),
+        true,
+    )
+    .map_err(|e| e.to_string())?;
+    let third_message = "Start whenever you're ready!".to_string();
+    let third_message_ended_at_row = queue_centered_message(
+        third_message.as_str(),
+        stdout,
+        second_message_ended_at_row + 1,
+        Some(CUSTOM_FOREGROUND_COLOR),
+        Some(CUSTOM_BACKGROUND_COLOR),
+        false,
     )
     .map_err(|e| e.to_string())?;
 
-    return Ok(());
+    // queue!(stdout, Clear(All)).map_err(|e| e.to_string())?;
+    stdout.flush().map_err(|e| e.to_string())?;
+
+    return Ok(third_message_ended_at_row);
 }
 
-// Need to rework - maybe a function that takes in strings, takes the starting row, and prints them all out centered and returns the final (column, row)?
-fn centered_message_column(message: &str) -> Result<u16, String> {
-    let usable_terminal_width = USABLE_TERMINAL_WIDTH.load(Ordering::Relaxed);
+// Need to rework - maybe a function that takes in strings, takes the starting row, and prints
+// them all out centered and returns the final (column, row)?
 
-    let col =
-        usable_terminal_width / 2 - message.len() as u16 / 2 + LEFT_OFFSET.load(Ordering::Relaxed);
-    return Ok(col);
+// respects cli border, centers
+fn queue_centered_message(
+    message: &str,
+    stdout: &mut std::io::Stdout,
+    starting_row: u16,
+    text_color: Option<Color>,
+    background_color: Option<Color>,
+    bold: bool,
+) -> Result<u16, String> {
+    let usable_terminal_width = USABLE_TERMINAL_WIDTH.load(Ordering::Relaxed);
+    let mut total_lines = 0;
+    let chunks_count = message
+        .as_bytes()
+        .chunks(usable_terminal_width as usize)
+        .len();
+    let message_chunks = message
+        .as_bytes()
+        .chunks(usable_terminal_width as usize)
+        .enumerate();
+
+    for (line_index, chunk) in message_chunks {
+        let line = std::str::from_utf8(chunk).map_err(|e: std::str::Utf8Error| e.to_string())?;
+        total_lines += 1;
+
+        // if there is a next line, input_col = LEFT_OFFSET.load(Ordering::Relaxed);
+        let mut input_col = LEFT_OFFSET.load(Ordering::Relaxed);
+        if line_index < chunks_count {
+            input_col = usable_terminal_width / 2 - (chunk.len() as u16 / 2)
+                + LEFT_OFFSET.load(Ordering::Relaxed);
+        }
+        queue!(
+            stdout,
+            MoveTo(input_col, starting_row + line_index as u16),
+            SetAttribute(if bold {
+                crossterm::style::Attribute::Bold
+            } else {
+                crossterm::style::Attribute::Reset
+            }),
+            SetBackgroundColor(background_color.unwrap_or(Color::Reset)),
+            SetForegroundColor(text_color.unwrap_or(Color::Reset)),
+            Print(line),
+        )
+        .map_err(|e| e.to_string())?;
+    }
+
+    return Ok(total_lines + starting_row - 1);
 }
