@@ -45,7 +45,6 @@ pub fn solo_typing_speed_test(stdout: &mut Stdout) -> Result<(), String> {
     let typing_duration = Duration::from_secs(60);
     set_initial_terminal_dimensions()?;
 
-    execute!(stdout, Clear(All)).map_err(|e| e.to_string())?;
     helpers::render_border(stdout)?;
     let mut user_input = String::new();
     let correct_sentence = &get_sentence::sentence();
@@ -59,6 +58,10 @@ pub fn solo_typing_speed_test(stdout: &mut Stdout) -> Result<(), String> {
         helpers::LEFT_OFFSET as u16,
         6,
     )?;
+    // if during countdown user typed something, it gets queued into event:poll(). While there's something, clearing it it.
+    while event::poll(Duration::from_millis(0)).map_err(|e| e.to_string())? {
+        let _ = event::read().map_err(|e| e.to_string())?;
+    }
 
     let race_started_at = Instant::now();
 

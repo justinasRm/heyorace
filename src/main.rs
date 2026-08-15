@@ -1,6 +1,6 @@
 use std::{
     env,
-    io::{self, stdout},
+    io::{self},
 };
 
 use crossterm::terminal;
@@ -11,7 +11,7 @@ mod instructions;
 mod invitee;
 
 const MIN_TERMINAL_WIDTH: u16 = 110;
-const MIN_TERMINAL_HEIGHT: u16 = 28;
+const MIN_TERMINAL_HEIGHT: u16 = 20;
 
 fn main() -> Result<(), String> {
     let mut stdout = io::stdout();
@@ -25,8 +25,8 @@ fn main() -> Result<(), String> {
     }
 
     let args: Vec<String> = env::args().skip(1).collect();
-    // TODO: instructions before match args.
-    // instructions::run(&mut stdout)?;
+
+    instructions::run(&mut stdout)?;
 
     match args.as_slice() {
         [cmd] if cmd == "type" => match host::solo_typing_speed_test(&mut stdout) {

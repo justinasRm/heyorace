@@ -8,7 +8,7 @@ use crossterm::style::{
 };
 use crossterm::terminal::Clear;
 use crossterm::terminal::ClearType::FromCursorDown;
-use crossterm::{queue, terminal};
+use crossterm::{execute, queue, terminal};
 use std::sync::atomic::{AtomicU16, Ordering};
 
 pub static USABLE_TERMINAL_WIDTH: AtomicU16 = AtomicU16::new(0);
@@ -56,39 +56,23 @@ pub fn print_countdown(
         false,
     )?;
 
-    let reveal_duration = Duration::from_secs(2);
-
     let countdown_started_at = Instant::now();
-    let mut last_displayed_second: Option<u64> = None;
+    queue_centered_message(
+        "3...",
+        stdout,
+        starting_row + 1,
+        Some(CUSTOM_FOREGROUND_COLOR),
+        None,
+        true,
+    )?;
+    stdout.flush().map_err(|e| e.to_string())?;
 
     for (char_index, correct_char) in correct_sentence.bytes().enumerate() {
-        let target_elapsed = Duration::from_secs_f64(
-            reveal_duration.as_secs_f64() * char_index as f64 / correct_sentence.len() as f64,
-        );
+        let target_elapsed =
+            Duration::from_secs_f64(char_index as f64 / correct_sentence.len() as f64);
         let actual_elapsed = countdown_started_at.elapsed();
         if target_elapsed > actual_elapsed {
             sleep(target_elapsed - actual_elapsed);
-        }
-
-        let elapsed_seconds = countdown_started_at.elapsed().as_secs();
-
-        if last_displayed_second != Some(elapsed_seconds) {
-            last_displayed_second = Some(elapsed_seconds);
-
-            let countdown_message = match elapsed_seconds {
-                0 => "3...".to_string(),
-                1 => "3... 2...".to_string(),
-                _ => "NOREACH".to_string(),
-            };
-
-            queue_centered_message(
-                &countdown_message,
-                stdout,
-                starting_row + 1,
-                Some(CUSTOM_FOREGROUND_COLOR),
-                None,
-                true,
-            )?;
         }
 
         let row_offset = char_index / usable_terminal_width as usize;
@@ -109,6 +93,18 @@ pub fn print_countdown(
     }
 
     queue_centered_message(
+        "3... 2...",
+        stdout,
+        starting_row + 1,
+        Some(CUSTOM_FOREGROUND_COLOR),
+        None,
+        true,
+    )?;
+    queue!(stdout, MoveTo(input_start_col, input_start_row)).map_err(|e| e.to_string())?;
+    stdout.flush().map_err(|e| e.to_string())?;
+    sleep(Duration::from_secs(1));
+
+    queue_centered_message(
         "3... 2... 1...",
         stdout,
         starting_row + 1,
@@ -117,9 +113,7 @@ pub fn print_countdown(
         true,
     )?;
     queue!(stdout, MoveTo(input_start_col, input_start_row)).map_err(|e| e.to_string())?;
-
     stdout.flush().map_err(|e| e.to_string())?;
-
     sleep(Duration::from_secs(1));
 
     queue_centered_message(
@@ -202,6 +196,41 @@ pub fn render_border(stdout: &mut Stdout) -> Result<(), String> {
         queue!(stdout, MoveTo(terminal_width, row), Print('|')).map_err(|e| e.to_string())?;
     }
     queue!(stdout, ResetColor).map_err(|e| e.to_string())?;
+
+    return Ok(());
+}
+
+pub fn render_border_over_duration(stdout: &mut Stdout, duration: Duration) -> Result<(), String> {
+    let (terminal_width, terminal_height) = terminal::size().map_err(|e| e.to_string())?;
+    let total_chars_to_print: u16 = terminal_width * 2 + terminal_height * 2;
+    let sleep_timer = duration.as_secs_f64() / total_chars_to_print as f64;
+
+    execute!(stdout, SetForegroundColor(Color::Black)).map_err(|e| e.to_string())?;
+
+    for column in 0..terminal_width {
+        execute!(stdout, MoveTo(column, 1), Print('-')).map_err(|e| e.to_string())?;
+        sleep(Duration::from_secs_f64(sleep_timer));
+    }
+    for row in 1..terminal_height {
+        execute!(stdout, MoveTo(terminal_width, row), Print('|')).map_err(|e| e.to_string())?;
+        sleep(Duration::from_secs_f64(sleep_timer));
+    }
+    for column in 1..terminal_width {
+        execute!(
+            stdout,
+            MoveTo(terminal_width - column - 1, terminal_height),
+            Print('-')
+        )
+        .map_err(|e| e.to_string())?;
+        sleep(Duration::from_secs_f64(sleep_timer));
+    }
+    for row in 1..terminal_height {
+        execute!(stdout, MoveTo(0, terminal_height - row), Print('|'))
+            .map_err(|e| e.to_string())?;
+        sleep(Duration::from_secs_f64(sleep_timer));
+    }
+
+    execute!(stdout, ResetColor).map_err(|e| e.to_string())?;
 
     return Ok(());
 }
