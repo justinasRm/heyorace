@@ -1,12 +1,9 @@
 use std::io::{self, Write};
-use std::thread::sleep;
 use std::time::{Duration, Instant};
 use std::unreachable;
 
 use crossterm::cursor::MoveTo;
-use crossterm::style::{
-    Color, Print, ResetColor, SetAttribute, SetBackgroundColor, SetForegroundColor,
-};
+use crossterm::style::{Color, Print, ResetColor, SetForegroundColor};
 use crossterm::terminal::Clear;
 use crossterm::terminal::ClearType::{All, FromCursorDown};
 use crossterm::{
@@ -14,33 +11,9 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode},
 };
 use crossterm::{execute, queue, terminal};
-use std::sync::atomic::{AtomicU16, Ordering};
+use std::sync::atomic::Ordering;
 
-use crate::get_sentence;
-
-static USABLE_TERMINAL_WIDTH: AtomicU16 = AtomicU16::new(0);
-static USABLE_TERMINAL_HEIGHT: AtomicU16 = AtomicU16::new(0);
-const LEFT_OFFSET: usize = 2;
-const CUSTOM_BACKGROUND_COLOR: crossterm::style::Color = Color::Rgb {
-    r: 16,
-    g: 24,
-    b: 32,
-};
-const CUSTOM_FOREGROUND_COLOR: crossterm::style::Color = Color::Rgb {
-    r: 254,
-    g: 231,
-    b: 21,
-};
-const CUSTOM_FOREGROUND_COLOR_DARK: crossterm::style::Color = Color::Rgb {
-    r: 122,
-    g: 110,
-    b: 1,
-};
-const CUSTOM_ERROR_COLOR: crossterm::style::Color = Color::Rgb {
-    r: 220,
-    g: 50,
-    b: 47,
-};
+use crate::{get_sentence, helpers};
 
 struct RawModeGuard;
 
@@ -61,8 +34,8 @@ fn set_initial_terminal_dimensions() -> Result<(), String> {
     let (terminal_width, terminal_height) = terminal::size().map_err(|e| e.to_string())?;
     let usable_terminal_width = terminal_width - 4;
     let usable_terminal_height = terminal_height - 2;
-    USABLE_TERMINAL_WIDTH.store(usable_terminal_width, Ordering::Relaxed);
-    USABLE_TERMINAL_HEIGHT.store(usable_terminal_height, Ordering::Relaxed);
+    helpers::USABLE_TERMINAL_WIDTH.store(usable_terminal_width, Ordering::Relaxed);
+    helpers::USABLE_TERMINAL_HEIGHT.store(usable_terminal_height, Ordering::Relaxed);
 
     return Ok(());
 }
@@ -78,13 +51,13 @@ pub fn host_race() -> Result<(), String> {
     let mut user_input = String::new();
     let correct_sentence = &get_sentence::sentence();
     let mut cursor_index = 0;
-    print_countdown(
+    helpers::print_countdown(
         &mut stdout,
         typing_duration.as_secs_f64(),
         1,
         correct_sentence,
-        USABLE_TERMINAL_WIDTH.load(Ordering::Relaxed),
-        LEFT_OFFSET as u16,
+        helpers::USABLE_TERMINAL_WIDTH.load(Ordering::Relaxed),
+        helpers::LEFT_OFFSET as u16,
         6,
     )?;
 
@@ -138,8 +111,8 @@ pub fn host_race() -> Result<(), String> {
                 _ => {}
             },
             Event::Resize(w, h) => {
-                USABLE_TERMINAL_WIDTH.store(w - 4, Ordering::Relaxed);
-                USABLE_TERMINAL_HEIGHT.store(h - 2, Ordering::Relaxed);
+                helpers::USABLE_TERMINAL_WIDTH.store(w - 4, Ordering::Relaxed);
+                helpers::USABLE_TERMINAL_HEIGHT.store(h - 2, Ordering::Relaxed);
             }
             _ => {}
         }
@@ -173,13 +146,13 @@ fn render(
 ) -> Result<u16, String> {
     let input_start_col = 2;
     let input_start_row = first_free_row + 3;
-    let usable_terminal_width = USABLE_TERMINAL_WIDTH.load(Ordering::Relaxed);
+    let usable_terminal_width = helpers::USABLE_TERMINAL_WIDTH.load(Ordering::Relaxed);
     let elapsed_seconds = race_started_at.elapsed().as_secs_f64();
     let elapsed_str = format!("Elapsed: {:.1}s / {:.1}s", elapsed_seconds, total_seconds);
     queue!(stdout, Clear(FromCursorDown)).map_err(|e| e.to_string())?;
 
     // elapsed_str is centered. Maybe on left I could show WPM, on right I could show accuracy in real time?
-    queue_centered_message(
+    helpers::queue_centered_message(
         elapsed_str.as_str(),
         stdout,
         // leaving space, so + 1.
@@ -233,7 +206,7 @@ fn render_user_typing(
         queue!(
             stdout,
             MoveTo(input_start_col, input_start_row + line_index as u16),
-            SetForegroundColor(CUSTOM_FOREGROUND_COLOR_DARK),
+            SetForegroundColor(helpers::CUSTOM_FOREGROUND_COLOR_DARK),
             Print(line),
             SetForegroundColor(Color::Reset)
         )
@@ -269,9 +242,9 @@ fn render_user_typing(
                     input_start_row + line_index as u16
                 ),
                 SetForegroundColor(if is_inputed_char_correct {
-                    CUSTOM_FOREGROUND_COLOR
+                    helpers::CUSTOM_FOREGROUND_COLOR
                 } else {
-                    CUSTOM_ERROR_COLOR
+                    helpers::CUSTOM_ERROR_COLOR
                 }),
                 Print(*inputting_char as char)
             )
@@ -362,32 +335,32 @@ fn print_statistics(wpm: f64, accuracy: f64, stdout: &mut std::io::Stdout) -> Re
     let (_, terminal_height) = terminal::size().map_err(|e| e.to_string())?;
 
     let first_message: String = "Finished!".to_string();
-    queue_centered_message(
+    helpers::queue_centered_message(
         first_message.as_str(),
         stdout,
         terminal_height - 4,
-        Some(CUSTOM_FOREGROUND_COLOR),
-        Some(CUSTOM_BACKGROUND_COLOR),
+        Some(helpers::CUSTOM_FOREGROUND_COLOR),
+        Some(helpers::CUSTOM_BACKGROUND_COLOR),
         false,
     )
     .map_err(|e| e.to_string())?;
     let second_message: String = format!("Words per minute: {:.1}", wpm).to_string();
-    queue_centered_message(
+    helpers::queue_centered_message(
         second_message.as_str(),
         stdout,
         terminal_height - 3,
-        Some(CUSTOM_FOREGROUND_COLOR),
-        Some(CUSTOM_BACKGROUND_COLOR),
+        Some(helpers::CUSTOM_FOREGROUND_COLOR),
+        Some(helpers::CUSTOM_BACKGROUND_COLOR),
         true,
     )
     .map_err(|e| e.to_string())?;
     let third_message: String = format!("Accuracy: {:.1}%", accuracy).to_string();
-    queue_centered_message(
+    helpers::queue_centered_message(
         third_message.as_str(),
         stdout,
         terminal_height - 2,
-        Some(CUSTOM_FOREGROUND_COLOR),
-        Some(CUSTOM_BACKGROUND_COLOR),
+        Some(helpers::CUSTOM_FOREGROUND_COLOR),
+        Some(helpers::CUSTOM_BACKGROUND_COLOR),
         true,
     )
     .map_err(|e| e.to_string())?;
@@ -397,152 +370,4 @@ fn print_statistics(wpm: f64, accuracy: f64, stdout: &mut std::io::Stdout) -> Re
     stdout.flush().map_err(|e| e.to_string())?;
 
     return Ok(());
-}
-
-fn print_countdown(
-    stdout: &mut std::io::Stdout,
-    total_seconds: f64,
-    starting_row: u16,
-    correct_sentence: &str,
-    usable_terminal_width: u16,
-    input_start_col: u16,
-    input_start_row: u16,
-) -> Result<(), String> {
-    // FROM
-    let elapsed_str = format!("Elapsed: {:.1}s / {:.1}s", 0, total_seconds);
-    queue!(stdout, Clear(FromCursorDown)).map_err(|e| e.to_string())?;
-
-    queue_centered_message(
-        elapsed_str.as_str(),
-        stdout,
-        starting_row + 3,
-        None,
-        None,
-        false,
-    )?;
-
-    let reveal_duration = Duration::from_secs(2);
-
-    let countdown_started_at = Instant::now();
-    let mut last_displayed_second: Option<u64> = None;
-
-    for (char_index, correct_char) in correct_sentence.bytes().enumerate() {
-        let target_elapsed = Duration::from_secs_f64(
-            reveal_duration.as_secs_f64() * char_index as f64 / correct_sentence.len() as f64,
-        );
-        let actual_elapsed = countdown_started_at.elapsed();
-        if target_elapsed > actual_elapsed {
-            sleep(target_elapsed - actual_elapsed);
-        }
-
-        let elapsed_seconds = countdown_started_at.elapsed().as_secs();
-
-        if last_displayed_second != Some(elapsed_seconds) {
-            last_displayed_second = Some(elapsed_seconds);
-
-            let countdown_message = match elapsed_seconds {
-                0 => "3...".to_string(),
-                1 => "3... 2...".to_string(),
-                _ => "NOREACH".to_string(),
-            };
-
-            queue_centered_message(
-                &countdown_message,
-                stdout,
-                starting_row + 1,
-                Some(CUSTOM_FOREGROUND_COLOR),
-                None,
-                true,
-            )?;
-        }
-
-        let row_offset = char_index / usable_terminal_width as usize;
-        let col_offset = char_index % usable_terminal_width as usize;
-
-        queue!(
-            stdout,
-            MoveTo(
-                input_start_col + col_offset as u16,
-                input_start_row + row_offset as u16,
-            ),
-            SetForegroundColor(CUSTOM_FOREGROUND_COLOR_DARK),
-            Print(correct_char as char),
-        )
-        .map_err(|e| e.to_string())?;
-
-        stdout.flush().map_err(|e| e.to_string())?;
-    }
-
-    queue_centered_message(
-        "3... 2... 1...",
-        stdout,
-        starting_row + 1,
-        Some(CUSTOM_FOREGROUND_COLOR),
-        None,
-        true,
-    )?;
-    queue!(stdout, MoveTo(input_start_col, input_start_row)).map_err(|e| e.to_string())?;
-
-    stdout.flush().map_err(|e| e.to_string())?;
-
-    sleep(Duration::from_secs(1));
-
-    queue_centered_message(
-        "3... 2... 1... GO!!!",
-        stdout,
-        starting_row + 1,
-        Some(CUSTOM_FOREGROUND_COLOR),
-        None,
-        true,
-    )?;
-    stdout.flush().map_err(|e| e.to_string())?;
-
-    return Ok(());
-}
-
-// respects cli border, centers
-fn queue_centered_message(
-    message: &str,
-    stdout: &mut std::io::Stdout,
-    starting_row: u16,
-    text_color: Option<Color>,
-    background_color: Option<Color>,
-    bold: bool,
-) -> Result<u16, String> {
-    let usable_terminal_width = USABLE_TERMINAL_WIDTH.load(Ordering::Relaxed);
-    let mut total_lines = 0;
-    let chunks_count = message
-        .as_bytes()
-        .chunks(usable_terminal_width as usize)
-        .len();
-    let message_chunks = message
-        .as_bytes()
-        .chunks(usable_terminal_width as usize)
-        .enumerate();
-
-    for (line_index, chunk) in message_chunks {
-        let line = std::str::from_utf8(chunk).map_err(|e: std::str::Utf8Error| e.to_string())?;
-        total_lines += 1;
-
-        let mut input_col = LEFT_OFFSET as u16;
-        if line_index < chunks_count {
-            input_col = usable_terminal_width / 2 - (chunk.len() as u16 / 2) + LEFT_OFFSET as u16;
-        }
-        queue!(
-            stdout,
-            MoveTo(input_col, starting_row + line_index as u16),
-            SetAttribute(if bold {
-                crossterm::style::Attribute::Bold
-            } else {
-                crossterm::style::Attribute::Reset
-            }),
-            SetBackgroundColor(background_color.unwrap_or(Color::Reset)),
-            SetForegroundColor(text_color.unwrap_or(Color::Reset)),
-            Print(line),
-            SetAttribute(crossterm::style::Attribute::Reset),
-        )
-        .map_err(|e| e.to_string())?;
-    }
-
-    return Ok(total_lines + starting_row - 1);
 }
