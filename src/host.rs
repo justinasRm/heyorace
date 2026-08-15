@@ -20,7 +20,7 @@ use crate::get_sentence;
 
 static USABLE_TERMINAL_WIDTH: AtomicU16 = AtomicU16::new(0);
 static USABLE_TERMINAL_HEIGHT: AtomicU16 = AtomicU16::new(0);
-static LEFT_OFFSET: AtomicU16 = AtomicU16::new(2);
+const LEFT_OFFSET: usize = 2;
 const CUSTOM_BACKGROUND_COLOR: crossterm::style::Color = Color::Rgb {
     r: 16,
     g: 24,
@@ -78,7 +78,15 @@ pub fn host_race() -> Result<(), String> {
     let mut user_input = String::new();
     let correct_sentence = &get_sentence::sentence();
     let mut cursor_index = 0;
-    print_countdown(&mut stdout)?;
+    print_countdown(
+        &mut stdout,
+        typing_duration.as_secs_f64(),
+        1,
+        correct_sentence,
+        USABLE_TERMINAL_WIDTH.load(Ordering::Relaxed),
+        LEFT_OFFSET as u16,
+        6,
+    )?;
 
     let race_started_at = Instant::now();
 
@@ -391,10 +399,54 @@ fn print_statistics(wpm: f64, accuracy: f64, stdout: &mut std::io::Stdout) -> Re
     return Ok(());
 }
 
-fn print_countdown(stdout: &mut std::io::Stdout) -> Result<(), String> {
+fn print_countdown(
+    stdout: &mut std::io::Stdout,
+    total_seconds: f64,
+    starting_row: u16,
+    correct_sentence: &str,
+    usable_terminal_width: u16,
+    input_start_col: u16,
+    input_start_row: u16,
+) -> Result<(), String> {
+    // FROM
+    let elapsed_str = format!("Elapsed: {:.1}s / {:.1}s", 0, total_seconds);
+    queue!(stdout, Clear(FromCursorDown)).map_err(|e| e.to_string())?;
+
+    queue_centered_message(
+        elapsed_str.as_str(),
+        stdout,
+        starting_row + 3,
+        None,
+        None,
+        false,
+    )?;
+
+    queue!(stdout, SetForegroundColor(CUSTOM_FOREGROUND_COLOR_DARK)).map_err(|e| e.to_string())?;
+    // in 3 seconds write out the entire correct_sentence char by char
+    let each_char_reveal_delay = Duration::from_secs_f64(3.0 / correct_sentence.len() as f64);
+
+    for (line_index, chunk) in correct_sentence
+        .as_bytes()
+        .chunks(usable_terminal_width as usize)
+        .enumerate()
+    {
+        for (correct_index, correct_char) in chunk.iter().enumerate() {
+            queue!(
+                stdout,
+                MoveTo(
+                    input_start_col + correct_index as u16,
+                    input_start_row + line_index as u16
+                ),
+                Print(*correct_char as char)
+            )
+            .map_err(|e| e.to_string())?;
+            stdout.flush().map_err(|e| e.to_string())?;
+            sleep(each_char_reveal_delay);
+        }
+    }
+    // TO
     let mut message = String::new();
     for i in 0..4 {
-        //
         if i == 3 {
             message.push_str("GO!!@@!");
         } else {
@@ -403,7 +455,7 @@ fn print_countdown(stdout: &mut std::io::Stdout) -> Result<(), String> {
         queue_centered_message(
             &message,
             stdout,
-            2,
+            starting_row + 1,
             Some(CUSTOM_FOREGROUND_COLOR),
             None,
             true,
@@ -443,11 +495,9 @@ fn queue_centered_message(
         let line = std::str::from_utf8(chunk).map_err(|e: std::str::Utf8Error| e.to_string())?;
         total_lines += 1;
 
-        // if there is a next line, input_col = LEFT_OFFSET.load(Ordering::Relaxed);
-        let mut input_col = LEFT_OFFSET.load(Ordering::Relaxed);
+        let mut input_col = LEFT_OFFSET as u16;
         if line_index < chunks_count {
-            input_col = usable_terminal_width / 2 - (chunk.len() as u16 / 2)
-                + LEFT_OFFSET.load(Ordering::Relaxed);
+            input_col = usable_terminal_width / 2 - (chunk.len() as u16 / 2) + LEFT_OFFSET as u16;
         }
         queue!(
             stdout,
