@@ -421,55 +421,84 @@ fn print_countdown(
         false,
     )?;
 
-    queue!(stdout, SetForegroundColor(CUSTOM_FOREGROUND_COLOR_DARK)).map_err(|e| e.to_string())?;
-    // in 3 seconds write out the entire correct_sentence char by char
-    let each_char_reveal_delay = Duration::from_secs_f64(3.0 / correct_sentence.len() as f64);
+    let reveal_duration = Duration::from_secs(2);
 
-    for (line_index, chunk) in correct_sentence
-        .as_bytes()
-        .chunks(usable_terminal_width as usize)
-        .enumerate()
-    {
-        for (correct_index, correct_char) in chunk.iter().enumerate() {
-            queue!(
-                stdout,
-                MoveTo(
-                    input_start_col + correct_index as u16,
-                    input_start_row + line_index as u16
-                ),
-                Print(*correct_char as char)
-            )
-            .map_err(|e| e.to_string())?;
-            stdout.flush().map_err(|e| e.to_string())?;
-            sleep(each_char_reveal_delay);
+    let countdown_started_at = Instant::now();
+    let mut last_displayed_second: Option<u64> = None;
+
+    for (char_index, correct_char) in correct_sentence.bytes().enumerate() {
+        let target_elapsed = Duration::from_secs_f64(
+            reveal_duration.as_secs_f64() * char_index as f64 / correct_sentence.len() as f64,
+        );
+        let actual_elapsed = countdown_started_at.elapsed();
+        if target_elapsed > actual_elapsed {
+            sleep(target_elapsed - actual_elapsed);
         }
-    }
-    // TO
-    let mut message = String::new();
-    for i in 0..4 {
-        if i == 3 {
-            message.push_str("GO!!@@!");
-        } else {
-            message.push_str(&format!("{}... ", 3 - i));
-        };
-        queue_centered_message(
-            &message,
+
+        let elapsed_seconds = countdown_started_at.elapsed().as_secs();
+
+        if last_displayed_second != Some(elapsed_seconds) {
+            last_displayed_second = Some(elapsed_seconds);
+
+            let countdown_message = match elapsed_seconds {
+                0 => "3...".to_string(),
+                1 => "3... 2...".to_string(),
+                _ => "NOREACH".to_string(),
+            };
+
+            queue_centered_message(
+                &countdown_message,
+                stdout,
+                starting_row + 1,
+                Some(CUSTOM_FOREGROUND_COLOR),
+                None,
+                true,
+            )?;
+        }
+
+        let row_offset = char_index / usable_terminal_width as usize;
+        let col_offset = char_index % usable_terminal_width as usize;
+
+        queue!(
             stdout,
-            starting_row + 1,
-            Some(CUSTOM_FOREGROUND_COLOR),
-            None,
-            true,
-        )?;
-        queue!(stdout, SetForegroundColor(Color::Reset)).map_err(|e| e.to_string())?;
+            MoveTo(
+                input_start_col + col_offset as u16,
+                input_start_row + row_offset as u16,
+            ),
+            SetForegroundColor(CUSTOM_FOREGROUND_COLOR_DARK),
+            Print(correct_char as char),
+        )
+        .map_err(|e| e.to_string())?;
+
         stdout.flush().map_err(|e| e.to_string())?;
-        sleep(Duration::from_secs(1));
     }
 
-    Ok(())
-}
+    queue_centered_message(
+        "3... 2... 1...",
+        stdout,
+        starting_row + 1,
+        Some(CUSTOM_FOREGROUND_COLOR),
+        None,
+        true,
+    )?;
+    queue!(stdout, MoveTo(input_start_col, input_start_row)).map_err(|e| e.to_string())?;
 
-// Need to rework - maybe a function that takes in strings, takes the starting row, and prints
-// them all out centered and returns the final (column, row)?
+    stdout.flush().map_err(|e| e.to_string())?;
+
+    sleep(Duration::from_secs(1));
+
+    queue_centered_message(
+        "3... 2... 1... GO!!!",
+        stdout,
+        starting_row + 1,
+        Some(CUSTOM_FOREGROUND_COLOR),
+        None,
+        true,
+    )?;
+    stdout.flush().map_err(|e| e.to_string())?;
+
+    return Ok(());
+}
 
 // respects cli border, centers
 fn queue_centered_message(
@@ -510,6 +539,7 @@ fn queue_centered_message(
             SetBackgroundColor(background_color.unwrap_or(Color::Reset)),
             SetForegroundColor(text_color.unwrap_or(Color::Reset)),
             Print(line),
+            SetAttribute(crossterm::style::Attribute::Reset),
         )
         .map_err(|e| e.to_string())?;
     }
