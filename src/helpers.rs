@@ -1,12 +1,14 @@
-use std::io::Write;
+use std::io::{Stdout, Write};
 use std::thread::sleep;
 use std::time::{Duration, Instant};
 
 use crossterm::cursor::MoveTo;
-use crossterm::queue;
-use crossterm::style::{Color, Print, SetAttribute, SetBackgroundColor, SetForegroundColor};
+use crossterm::style::{
+    Color, Print, ResetColor, SetAttribute, SetBackgroundColor, SetForegroundColor,
+};
 use crossterm::terminal::Clear;
 use crossterm::terminal::ClearType::FromCursorDown;
+use crossterm::{queue, terminal};
 use std::sync::atomic::{AtomicU16, Ordering};
 
 pub static USABLE_TERMINAL_WIDTH: AtomicU16 = AtomicU16::new(0);
@@ -178,4 +180,28 @@ pub fn queue_centered_message(
     }
 
     return Ok(total_lines + starting_row - 1);
+}
+
+pub fn render_border(stdout: &mut Stdout) -> Result<(), String> {
+    let (terminal_width, terminal_height) = terminal::size().map_err(|e| e.to_string())?;
+
+    let horizontal_border = "-".repeat(terminal_width as usize);
+
+    queue!(
+        stdout,
+        SetForegroundColor(Color::Black),
+        MoveTo(0, 1),
+        Print(&horizontal_border),
+        MoveTo(0, terminal_height),
+        Print(&horizontal_border),
+    )
+    .map_err(|e| e.to_string())?;
+
+    for row in 1..terminal_height {
+        queue!(stdout, MoveTo(0, row), Print('|')).map_err(|e| e.to_string())?;
+        queue!(stdout, MoveTo(terminal_width, row), Print('|')).map_err(|e| e.to_string())?;
+    }
+    queue!(stdout, ResetColor).map_err(|e| e.to_string())?;
+
+    return Ok(());
 }

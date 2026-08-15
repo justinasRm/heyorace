@@ -1,4 +1,4 @@
-use std::io::{self, Write};
+use std::io::{self, Stdout, Write};
 use std::time::{Duration, Instant};
 use std::unreachable;
 
@@ -40,19 +40,18 @@ fn set_initial_terminal_dimensions() -> Result<(), String> {
     return Ok(());
 }
 
-pub fn host_race() -> Result<(), String> {
+pub fn solo_typing_speed_test(stdout: &mut Stdout) -> Result<(), String> {
     let _raw_mode = RawModeGuard::new().map_err(|e| e.to_string())?;
     let typing_duration = Duration::from_secs(60);
     set_initial_terminal_dimensions()?;
 
-    let mut stdout = io::stdout();
-    execute!(&mut stdout, Clear(All)).map_err(|e| e.to_string())?;
-    render_border(&mut stdout)?;
+    execute!(stdout, Clear(All)).map_err(|e| e.to_string())?;
+    helpers::render_border(stdout)?;
     let mut user_input = String::new();
     let correct_sentence = &get_sentence::sentence();
     let mut cursor_index = 0;
     helpers::print_countdown(
-        &mut stdout,
+        stdout,
         typing_duration.as_secs_f64(),
         1,
         correct_sentence,
@@ -68,7 +67,7 @@ pub fn host_race() -> Result<(), String> {
             break;
         }
         render(
-            &mut stdout,
+            stdout,
             correct_sentence,
             &user_input,
             cursor_index,
@@ -118,7 +117,7 @@ pub fn host_race() -> Result<(), String> {
         }
 
         render(
-            &mut stdout,
+            stdout,
             correct_sentence,
             &user_input,
             cursor_index,
@@ -130,7 +129,7 @@ pub fn host_race() -> Result<(), String> {
 
     let (wpm, accuracy) = statistics(correct_sentence, &user_input.to_string(), typing_duration)?;
 
-    print_statistics(wpm, accuracy, &mut stdout)?;
+    print_statistics(wpm, accuracy, stdout)?;
 
     return Ok(());
 }
@@ -169,7 +168,7 @@ fn render(
         usable_terminal_width,
     )?;
 
-    render_border(stdout)?;
+    helpers::render_border(stdout)?;
 
     render_user_typing(
         stdout,
@@ -254,30 +253,6 @@ fn render_user_typing(
 
     queue!(stdout, MoveTo(2, 5), SetForegroundColor(Color::Reset)).map_err(|e| e.to_string())?;
     stdout.flush().map_err(|e| e.to_string())?;
-
-    return Ok(());
-}
-
-fn render_border(stdout: &mut std::io::Stdout) -> Result<(), String> {
-    let (terminal_width, terminal_height) = terminal::size().map_err(|e| e.to_string())?;
-
-    let horizontal_border = "-".repeat(terminal_width as usize);
-
-    queue!(
-        stdout,
-        SetForegroundColor(Color::Black),
-        MoveTo(0, 1),
-        Print(&horizontal_border),
-        MoveTo(0, terminal_height),
-        Print(&horizontal_border),
-    )
-    .map_err(|e| e.to_string())?;
-
-    for row in 1..terminal_height {
-        queue!(stdout, MoveTo(0, row), Print('|')).map_err(|e| e.to_string())?;
-        queue!(stdout, MoveTo(terminal_width, row), Print('|')).map_err(|e| e.to_string())?;
-    }
-    queue!(stdout, ResetColor).map_err(|e| e.to_string())?;
 
     return Ok(());
 }
