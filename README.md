@@ -6,6 +6,8 @@ Install with:
 curl -fsSL https://raw.githubusercontent.com/justinasRm/heyorace/main/install.sh | sh
 ```
 
+Run with:
+
 ```sh
 heyo
 ```
