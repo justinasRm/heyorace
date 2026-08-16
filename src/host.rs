@@ -12,24 +12,13 @@ use std::sync::atomic::Ordering;
 
 use crate::{get_sentence, helpers};
 
-fn set_initial_terminal_dimensions() -> Result<(), String> {
-    let (terminal_width, terminal_height) = terminal::size().map_err(|e| e.to_string())?;
-    let usable_terminal_width = terminal_width - 4;
-    let usable_terminal_height = terminal_height - 2;
-    helpers::USABLE_TERMINAL_WIDTH.store(usable_terminal_width, Ordering::Relaxed);
-    helpers::USABLE_TERMINAL_HEIGHT.store(usable_terminal_height, Ordering::Relaxed);
-
-    return Ok(());
-}
-
 pub fn solo_typing_speed_test(stdout: &mut Stdout) -> Result<(), String> {
     let typing_duration = Duration::from_secs(60);
-    set_initial_terminal_dimensions()?;
-
-    helpers::render_border(stdout)?;
     let mut user_input = String::new();
     let correct_sentence = &get_sentence::sentence();
     let mut cursor_index = 0;
+
+    helpers::render_border(stdout, true)?;
     helpers::print_countdown(
         stdout,
         typing_duration.as_secs_f64(),
@@ -152,7 +141,7 @@ fn render(
         usable_terminal_width,
     )?;
 
-    helpers::render_border(stdout)?;
+    helpers::render_border(stdout, false)?;
 
     render_user_typing(
         stdout,

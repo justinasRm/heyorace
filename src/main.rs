@@ -4,6 +4,8 @@ use std::{
 };
 
 use crossterm::terminal::{self, disable_raw_mode, enable_raw_mode};
+
+use crate::helpers::set_initial_terminal_dimensions;
 mod get_sentence;
 mod helpers;
 mod host;
@@ -45,6 +47,8 @@ fn main() -> Result<(), String> {
     let mut stdout = io::stdout();
 
     let (terminal_width, terminal_height) = terminal::size().map_err(|e| e.to_string())?;
+    set_initial_terminal_dimensions()?;
+
     if terminal_width < MIN_TERMINAL_WIDTH || terminal_height < MIN_TERMINAL_HEIGHT {
         return Err(format!(
             "Terminal is too small. Minimum size is {}x{}, current size is {}x{}.",

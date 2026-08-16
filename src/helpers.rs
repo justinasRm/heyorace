@@ -12,7 +12,7 @@ use crossterm::terminal::ClearType::FromCursorDown;
 use crossterm::{event, execute, queue, terminal};
 use std::sync::atomic::{AtomicU16, Ordering};
 
-use crate::CLEAN_EXIT_EVENT_MESSAGE;
+use crate::{CLEAN_EXIT_EVENT_MESSAGE, helpers};
 
 pub static USABLE_TERMINAL_WIDTH: AtomicU16 = AtomicU16::new(0);
 pub static USABLE_TERMINAL_HEIGHT: AtomicU16 = AtomicU16::new(0);
@@ -48,7 +48,6 @@ pub fn print_countdown(
     input_start_row: u16,
 ) -> Result<(), String> {
     let elapsed_str = format!("Elapsed: {:.1}s / {:.1}s", 0, total_seconds);
-    queue!(stdout, Clear(FromCursorDown)).map_err(|e| e.to_string())?;
 
     queue_centered_message(
         elapsed_str.as_str(),
@@ -179,10 +178,12 @@ pub fn queue_centered_message(
     return Ok(total_lines + starting_row - 1);
 }
 
-pub fn render_border(stdout: &mut Stdout) -> Result<(), String> {
+pub fn render_border(stdout: &mut Stdout, clear_before_render: bool) -> Result<(), String> {
     let (terminal_width, terminal_height) = terminal::size().map_err(|e| e.to_string())?;
-
     let horizontal_border = "-".repeat(terminal_width as usize);
+    if clear_before_render {
+        queue!(stdout, MoveTo(0, 1), Clear(FromCursorDown),).map_err(|e| e.to_string())?;
+    }
 
     queue!(
         stdout,
@@ -270,5 +271,15 @@ pub fn debug() -> Result<(), String> {
     println!("starting debug");
     exit_aware_sleep(Duration::from_secs(3))?;
     println!("ending debug");
+    return Ok(());
+}
+
+pub fn set_initial_terminal_dimensions() -> Result<(), String> {
+    let (terminal_width, terminal_height) = terminal::size().map_err(|e| e.to_string())?;
+    let usable_terminal_width = terminal_width - 4;
+    let usable_terminal_height = terminal_height - 2;
+    helpers::USABLE_TERMINAL_WIDTH.store(usable_terminal_width, Ordering::Relaxed);
+    helpers::USABLE_TERMINAL_HEIGHT.store(usable_terminal_height, Ordering::Relaxed);
+
     return Ok(());
 }
