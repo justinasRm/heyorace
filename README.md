@@ -1,1 +1,11 @@
-A typing speed CLI tool. Rust practice.
+Rust + No AI; wtf do you need more?
+
+Install with:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/justinasRm/heyorace/main/install.sh | sh
+```
+
+```sh
+heyo
+```
