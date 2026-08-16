@@ -38,4 +38,4 @@ fi
 chmod +x "$INSTALL_DIR/$BIN_NAME"
 
 rm -rf "$tmp"
-echo "Installed! Run '${BIN_NAME} host' or '${BIN_NAME} join <code>' to get started."
+echo "Installed! Run '${BIN_NAME}'."
