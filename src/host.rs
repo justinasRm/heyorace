@@ -1,34 +1,16 @@
-use std::io::{self, Stdout, Write};
+use std::io::{Stdout, Write};
 use std::time::{Duration, Instant};
 use std::unreachable;
 
 use crossterm::cursor::MoveTo;
-use crossterm::style::{Color, Print, ResetColor, SetForegroundColor};
+use crossterm::event::{self, Event, KeyCode};
+use crossterm::style::{Color, Print, SetForegroundColor};
 use crossterm::terminal::Clear;
-use crossterm::terminal::ClearType::{All, FromCursorDown};
-use crossterm::{
-    event::{self, Event, KeyCode},
-    terminal::{disable_raw_mode, enable_raw_mode},
-};
-use crossterm::{execute, queue, terminal};
+use crossterm::terminal::ClearType::FromCursorDown;
+use crossterm::{queue, terminal};
 use std::sync::atomic::Ordering;
 
 use crate::{get_sentence, helpers};
-
-struct RawModeGuard;
-
-impl RawModeGuard {
-    fn new() -> Result<Self, String> {
-        enable_raw_mode().map_err(|e| e.to_string())?;
-        Ok(Self)
-    }
-}
-
-impl Drop for RawModeGuard {
-    fn drop(&mut self) {
-        let _ = disable_raw_mode();
-    }
-}
 
 fn set_initial_terminal_dimensions() -> Result<(), String> {
     let (terminal_width, terminal_height) = terminal::size().map_err(|e| e.to_string())?;
@@ -41,7 +23,6 @@ fn set_initial_terminal_dimensions() -> Result<(), String> {
 }
 
 pub fn solo_typing_speed_test(stdout: &mut Stdout) -> Result<(), String> {
-    let _raw_mode = RawModeGuard::new().map_err(|e| e.to_string())?;
     let typing_duration = Duration::from_secs(60);
     set_initial_terminal_dimensions()?;
 
@@ -86,32 +67,32 @@ pub fn solo_typing_speed_test(stdout: &mut Stdout) -> Result<(), String> {
         let event = event::read().map_err(|e| e.to_string())?;
 
         match event {
-            Event::Key(key_event) => match key_event.code {
-                KeyCode::Char(ch) => {
-                    if ch.is_ascii() {
-                        user_input.insert(cursor_index, ch);
-                        cursor_index += 1;
-                    }
+            Event::Key(key_event) => {
+                if helpers::is_exit_event(Event::Key(key_event)) {
+                    break;
                 }
-                KeyCode::Backspace => {
-                    if cursor_index > 0 {
-                        cursor_index -= 1;
-                        user_input.remove(cursor_index);
+                match key_event.code {
+                    KeyCode::Char(ch) => {
+                        if ch.is_ascii() {
+                            user_input.insert(cursor_index, ch);
+                            cursor_index += 1;
+                        }
                     }
-                }
-                KeyCode::Left => {
-                    if cursor_index > 0 {
-                        cursor_index -= 1;
+                    KeyCode::Backspace => {
+                        if cursor_index > 0 {
+                            cursor_index -= 1;
+                            user_input.remove(cursor_index);
+                        }
                     }
-                }
-                KeyCode::Right => {
-                    if cursor_index < user_input.len() {
-                        cursor_index += 1;
+                    KeyCode::Left => cursor_index = cursor_index.saturating_sub(1),
+                    KeyCode::Right => {
+                        if cursor_index < user_input.len() {
+                            cursor_index += 1;
+                        }
                     }
+                    _ => {}
                 }
-                KeyCode::Esc => break,
-                _ => {}
-            },
+            }
             Event::Resize(w, h) => {
                 helpers::USABLE_TERMINAL_WIDTH.store(w - 4, Ordering::Relaxed);
                 helpers::USABLE_TERMINAL_HEIGHT.store(h - 2, Ordering::Relaxed);

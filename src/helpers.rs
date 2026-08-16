@@ -1,15 +1,18 @@
 use std::io::{Stdout, Write};
-use std::thread::sleep;
+use std::println;
 use std::time::{Duration, Instant};
 
 use crossterm::cursor::MoveTo;
+use crossterm::event::{Event, KeyCode, KeyModifiers};
 use crossterm::style::{
     Color, Print, ResetColor, SetAttribute, SetBackgroundColor, SetForegroundColor,
 };
 use crossterm::terminal::Clear;
 use crossterm::terminal::ClearType::FromCursorDown;
-use crossterm::{execute, queue, terminal};
+use crossterm::{event, execute, queue, terminal};
 use std::sync::atomic::{AtomicU16, Ordering};
+
+use crate::CLEAN_EXIT_EVENT_MESSAGE;
 
 pub static USABLE_TERMINAL_WIDTH: AtomicU16 = AtomicU16::new(0);
 pub static USABLE_TERMINAL_HEIGHT: AtomicU16 = AtomicU16::new(0);
@@ -72,7 +75,7 @@ pub fn print_countdown(
             Duration::from_secs_f64(char_index as f64 / correct_sentence.len() as f64);
         let actual_elapsed = countdown_started_at.elapsed();
         if target_elapsed > actual_elapsed {
-            sleep(target_elapsed - actual_elapsed);
+            exit_aware_sleep(target_elapsed - actual_elapsed)?;
         }
 
         let row_offset = char_index / usable_terminal_width as usize;
@@ -102,7 +105,7 @@ pub fn print_countdown(
     )?;
     queue!(stdout, MoveTo(input_start_col, input_start_row)).map_err(|e| e.to_string())?;
     stdout.flush().map_err(|e| e.to_string())?;
-    sleep(Duration::from_secs(1));
+    exit_aware_sleep(Duration::from_secs(1))?;
 
     queue_centered_message(
         "3... 2... 1...",
@@ -114,7 +117,7 @@ pub fn print_countdown(
     )?;
     queue!(stdout, MoveTo(input_start_col, input_start_row)).map_err(|e| e.to_string())?;
     stdout.flush().map_err(|e| e.to_string())?;
-    sleep(Duration::from_secs(1));
+    exit_aware_sleep(Duration::from_secs(1))?;
 
     queue_centered_message(
         "3... 2... 1... GO!!!",
@@ -209,11 +212,11 @@ pub fn render_border_over_duration(stdout: &mut Stdout, duration: Duration) -> R
 
     for column in 0..terminal_width {
         execute!(stdout, MoveTo(column, 1), Print('-')).map_err(|e| e.to_string())?;
-        sleep(Duration::from_secs_f64(sleep_timer));
+        exit_aware_sleep(Duration::from_secs_f64(sleep_timer))?;
     }
     for row in 1..terminal_height {
         execute!(stdout, MoveTo(terminal_width, row), Print('|')).map_err(|e| e.to_string())?;
-        sleep(Duration::from_secs_f64(sleep_timer));
+        exit_aware_sleep(Duration::from_secs_f64(sleep_timer))?;
     }
     for column in 1..terminal_width {
         execute!(
@@ -222,15 +225,50 @@ pub fn render_border_over_duration(stdout: &mut Stdout, duration: Duration) -> R
             Print('-')
         )
         .map_err(|e| e.to_string())?;
-        sleep(Duration::from_secs_f64(sleep_timer));
+        exit_aware_sleep(Duration::from_secs_f64(sleep_timer))?;
     }
     for row in 1..terminal_height {
         execute!(stdout, MoveTo(0, terminal_height - row), Print('|'))
             .map_err(|e| e.to_string())?;
-        sleep(Duration::from_secs_f64(sleep_timer));
+        exit_aware_sleep(Duration::from_secs_f64(sleep_timer))?;
     }
 
     execute!(stdout, ResetColor).map_err(|e| e.to_string())?;
 
+    return Ok(());
+}
+
+pub fn is_exit_event(event: Event) -> bool {
+    match event {
+        Event::Key(key_event) => {
+            return key_event.code == KeyCode::Esc
+                || (key_event.code == KeyCode::Char('c')
+                    && key_event.modifiers.contains(KeyModifiers::CONTROL));
+        }
+        _ => false,
+    }
+}
+
+pub fn exit_aware_sleep(duration: Duration) -> Result<(), String> {
+    let started_at = Instant::now();
+    while started_at.elapsed() < duration {
+        let remaining = duration.saturating_sub(started_at.elapsed());
+        let pool_timeout = remaining.min(Duration::from_millis(10));
+
+        if event::poll(pool_timeout).map_err(|e| e.to_string())? {
+            let event = event::read().map_err(|e| e.to_string())?;
+            if is_exit_event(event) {
+                return Err(CLEAN_EXIT_EVENT_MESSAGE.to_string());
+            }
+        }
+    }
+
+    return Ok(());
+}
+
+pub fn debug() -> Result<(), String> {
+    println!("starting debug");
+    exit_aware_sleep(Duration::from_secs(3))?;
+    println!("ending debug");
     return Ok(());
 }
