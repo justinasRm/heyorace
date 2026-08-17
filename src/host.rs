@@ -2,11 +2,9 @@ use std::io::{Stdout, Write};
 use std::time::{Duration, Instant};
 use std::unreachable;
 
-use crossterm::cursor::MoveTo;
+use crossterm::cursor::{self, MoveTo};
 use crossterm::event::{self, Event, KeyCode};
 use crossterm::style::{Color, Print, SetForegroundColor};
-use crossterm::terminal::Clear;
-use crossterm::terminal::ClearType::FromCursorDown;
 use crossterm::{queue, terminal};
 use std::sync::atomic::Ordering;
 
@@ -29,7 +27,7 @@ pub fn solo_typing_speed_test(stdout: &mut Stdout) -> Result<(), String> {
         helpers::LEFT_OFFSET as u16,
         6,
     )?;
-    // if during countdown user typed something, it gets queued into event:poll(). While there's something, clearing it it.
+    // if during countdown user typed something, it gets queued into event:poll(). While there's something, clearing it.
     while event::poll(Duration::from_millis(0)).map_err(|e| e.to_string())? {
         let _ = event::read().map_err(|e| e.to_string())?;
     }
@@ -50,7 +48,7 @@ pub fn solo_typing_speed_test(stdout: &mut Stdout) -> Result<(), String> {
             3,
         )?;
 
-        if !event::poll(Duration::from_millis(100)).map_err(|e| e.to_string())? {
+        if !event::poll(Duration::from_millis(5)).map_err(|e| e.to_string())? {
             continue;
         }
 
@@ -90,15 +88,15 @@ pub fn solo_typing_speed_test(stdout: &mut Stdout) -> Result<(), String> {
             _ => {}
         }
 
-        render(
-            stdout,
-            correct_sentence,
-            &user_input,
-            cursor_index,
-            race_started_at,
-            typing_duration.as_secs_f64(),
-            3,
-        )?;
+        // render(
+        //     stdout,
+        //     correct_sentence,
+        //     &user_input,
+        //     cursor_index,
+        //     race_started_at,
+        //     typing_duration.as_secs_f64(),
+        //     3,
+        // )?;
     }
 
     let (wpm, accuracy) = statistics(correct_sentence, &user_input.to_string(), typing_duration)?;
@@ -121,12 +119,11 @@ fn render(
     let input_start_row = first_free_row + 3;
     let usable_terminal_width = helpers::USABLE_TERMINAL_WIDTH.load(Ordering::Relaxed);
     let elapsed_seconds = race_started_at.elapsed().as_secs_f64();
-    let elapsed_str = format!("Elapsed: {:.1}s / {:.1}s", elapsed_seconds, total_seconds);
-    queue!(stdout, Clear(FromCursorDown)).map_err(|e| e.to_string())?;
+    // queue!(stdout, Clear(FromCursorDown)).map_err(|e| e.to_string())?;
+    queue!(stdout, cursor::Hide).map_err(|e| e.to_string())?;
 
-    // elapsed_str is centered. Maybe on left I could show WPM, on right I could show accuracy in real time?
     helpers::queue_centered_message(
-        elapsed_str.as_str(),
+        format!("Elapsed: {:.1}s / {:.1}s", elapsed_seconds, total_seconds).as_str(),
         stdout,
         // leaving space, so + 1.
         first_free_row + 1,
@@ -142,8 +139,6 @@ fn render(
         usable_terminal_width,
     )?;
 
-    helpers::render_border(stdout, false)?;
-
     render_user_typing(
         stdout,
         user_input,
@@ -153,7 +148,7 @@ fn render(
         usable_terminal_width,
     )?;
 
-    queue!(stdout, MoveTo(cursor_col, cursor_row)).map_err(|e| e.to_string())?;
+    queue!(stdout, MoveTo(cursor_col, cursor_row), cursor::Show).map_err(|e| e.to_string())?;
 
     stdout.flush().map_err(|e| e.to_string())?;
 
@@ -226,7 +221,6 @@ fn render_user_typing(
     }
 
     queue!(stdout, MoveTo(2, 5), SetForegroundColor(Color::Reset)).map_err(|e| e.to_string())?;
-    stdout.flush().map_err(|e| e.to_string())?;
 
     return Ok(());
 }
@@ -314,7 +308,7 @@ fn print_statistics(wpm: f64, accuracy: f64, stdout: &mut std::io::Stdout) -> Re
     )
     .map_err(|e| e.to_string())?;
 
-    queue!(stdout, MoveTo(0, terminal_height - 1), Print("\r\n"),).map_err(|e| e.to_string())?;
+    queue!(stdout, MoveTo(0, terminal_height - 1), Print("\r\n")).map_err(|e| e.to_string())?;
 
     stdout.flush().map_err(|e| e.to_string())?;
 
