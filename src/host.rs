@@ -48,7 +48,7 @@ pub fn solo_typing_speed_test(stdout: &mut Stdout) -> Result<(), String> {
             3,
         )?;
 
-        if !event::poll(Duration::from_millis(5)).map_err(|e| e.to_string())? {
+        if !event::poll(Duration::from_millis(100)).map_err(|e| e.to_string())? {
             continue;
         }
 
@@ -87,16 +87,6 @@ pub fn solo_typing_speed_test(stdout: &mut Stdout) -> Result<(), String> {
             }
             _ => {}
         }
-
-        // render(
-        //     stdout,
-        //     correct_sentence,
-        //     &user_input,
-        //     cursor_index,
-        //     race_started_at,
-        //     typing_duration.as_secs_f64(),
-        //     3,
-        // )?;
     }
 
     let (wpm, accuracy) = statistics(correct_sentence, &user_input.to_string(), typing_duration)?;
