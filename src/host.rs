@@ -4,12 +4,12 @@ use std::unreachable;
 
 use crossterm::cursor::{self, MoveTo};
 use crossterm::event::{self, Event, KeyCode};
+use crossterm::queue;
 use crossterm::style::{Color, Print, SetForegroundColor};
-use crossterm::{queue, terminal};
 use std::sync::atomic::Ordering;
 
 use crate::helpers::CUSTOM_FOREGROUND_COLOR;
-use crate::{get_sentence, helpers};
+use crate::{get_sentence, helpers, statistics};
 
 pub fn solo_typing_speed_test(stdout: &mut Stdout) -> Result<(), String> {
     let typing_duration = Duration::from_secs(60);
@@ -91,7 +91,8 @@ pub fn solo_typing_speed_test(stdout: &mut Stdout) -> Result<(), String> {
 
     let (wpm, accuracy) = statistics(correct_sentence, &user_input.to_string(), typing_duration)?;
 
-    print_statistics(wpm, accuracy, stdout)?;
+    statistics::print_after_race_statistics(wpm, accuracy, stdout)?;
+    statistics::save_statistics(wpm, accuracy)?;
 
     return Ok(());
 }
@@ -262,45 +263,4 @@ fn statistics(
     let wpm: f64 = total_word_count as f64 / (total_duration.as_secs_f64() / 60.0);
 
     return Ok((wpm, accuracy));
-}
-
-fn print_statistics(wpm: f64, accuracy: f64, stdout: &mut std::io::Stdout) -> Result<(), String> {
-    let (_, terminal_height) = terminal::size().map_err(|e| e.to_string())?;
-
-    let first_message: String = "Finished!".to_string();
-    helpers::queue_centered_message(
-        first_message.as_str(),
-        stdout,
-        terminal_height - 4,
-        Some(helpers::CUSTOM_FOREGROUND_COLOR),
-        None,
-        false,
-    )
-    .map_err(|e| e.to_string())?;
-    let second_message: String = format!("Words per minute: {:.1}", wpm).to_string();
-    helpers::queue_centered_message(
-        second_message.as_str(),
-        stdout,
-        terminal_height - 3,
-        Some(helpers::CUSTOM_FOREGROUND_COLOR),
-        None,
-        true,
-    )
-    .map_err(|e| e.to_string())?;
-    let third_message: String = format!("Accuracy: {:.1}%", accuracy).to_string();
-    helpers::queue_centered_message(
-        third_message.as_str(),
-        stdout,
-        terminal_height - 2,
-        Some(helpers::CUSTOM_FOREGROUND_COLOR),
-        None,
-        true,
-    )
-    .map_err(|e| e.to_string())?;
-
-    queue!(stdout, MoveTo(0, terminal_height - 1), Print("\r\n")).map_err(|e| e.to_string())?;
-
-    stdout.flush().map_err(|e| e.to_string())?;
-
-    return Ok(());
 }

@@ -11,6 +11,7 @@ mod helpers;
 mod host;
 mod instructions;
 mod invitee;
+mod statistics;
 
 const MIN_TERMINAL_WIDTH: u16 = 110;
 const MIN_TERMINAL_HEIGHT: u16 = 20;
@@ -66,18 +67,22 @@ fn main() -> Result<(), String> {
             },
             Err(e) => clean_exit(e),
         },
-        [cmd] if cmd == "type" => match host::solo_typing_speed_test(&mut stdout) {
+        [cmd] if cmd == "stats" => match statistics::statistics_display_from_args(&mut stdout) {
             Ok(()) => Ok(()),
             Err(e) => clean_exit(e),
         },
-        [cmd] if cmd == "debug" => match helpers::debug() {
-            Ok(()) => Ok(()),
-            Err(e) => clean_exit(e),
-        },
+        // [cmd] if cmd == "type" => match host::solo_typing_speed_test(&mut stdout) {
+        //     Ok(()) => Ok(()),
+        //     Err(e) => clean_exit(e),
+        // },
+        // [cmd] if cmd == "debug" => match helpers::debug() {
+        //     Ok(()) => Ok(()),
+        //     Err(e) => clean_exit(e),
+        // },
         // [cmd, code] if cmd == "join" => match invitee::join_race(code) {
         //     Ok(()) => Ok(()),
         //     Err(e) => Err(e.to_string()),
         // },
-        [..] => Err("wrong cli command. use 'heyorace'.".to_string()),
+        [..] => Err("wrong cli command. use 'heyo'.".to_string()),
     }
 }
