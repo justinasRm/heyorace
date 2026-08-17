@@ -17,11 +17,7 @@ use crate::{CLEAN_EXIT_EVENT_MESSAGE, helpers};
 pub static USABLE_TERMINAL_WIDTH: AtomicU16 = AtomicU16::new(0);
 pub static USABLE_TERMINAL_HEIGHT: AtomicU16 = AtomicU16::new(0);
 pub const LEFT_OFFSET: usize = 2;
-pub const CUSTOM_BACKGROUND_COLOR: crossterm::style::Color = Color::Rgb {
-    r: 16,
-    g: 24,
-    b: 32,
-};
+
 pub const CUSTOM_FOREGROUND_COLOR: crossterm::style::Color = Color::Rgb {
     r: 254,
     g: 231,
@@ -53,7 +49,7 @@ pub fn print_countdown(
         elapsed_str.as_str(),
         stdout,
         starting_row + 3,
-        None,
+        Some(CUSTOM_FOREGROUND_COLOR),
         None,
         false,
     )?;
@@ -182,12 +178,12 @@ pub fn render_border(stdout: &mut Stdout, clear_before_render: bool) -> Result<(
     let (terminal_width, terminal_height) = terminal::size().map_err(|e| e.to_string())?;
     let horizontal_border = "-".repeat(terminal_width as usize);
     if clear_before_render {
-        queue!(stdout, MoveTo(0, 1), Clear(FromCursorDown),).map_err(|e| e.to_string())?;
+        queue!(stdout, MoveTo(0, 1), Clear(FromCursorDown)).map_err(|e| e.to_string())?;
     }
 
     queue!(
         stdout,
-        SetForegroundColor(Color::Black),
+        SetForegroundColor(Color::DarkYellow),
         MoveTo(0, 1),
         Print(&horizontal_border),
         MoveTo(0, terminal_height),
@@ -209,7 +205,7 @@ pub fn render_border_over_duration(stdout: &mut Stdout, duration: Duration) -> R
     let total_chars_to_print: u16 = terminal_width * 2 + terminal_height * 2;
     let sleep_timer = duration.as_secs_f64() / total_chars_to_print as f64;
 
-    execute!(stdout, SetForegroundColor(Color::Black)).map_err(|e| e.to_string())?;
+    execute!(stdout, SetForegroundColor(Color::DarkYellow)).map_err(|e| e.to_string())?;
 
     for column in 0..terminal_width {
         execute!(stdout, MoveTo(column, 1), Print('-')).map_err(|e| e.to_string())?;

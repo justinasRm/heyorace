@@ -10,6 +10,7 @@ use crossterm::terminal::ClearType::FromCursorDown;
 use crossterm::{queue, terminal};
 use std::sync::atomic::Ordering;
 
+use crate::helpers::CUSTOM_FOREGROUND_COLOR;
 use crate::{get_sentence, helpers};
 
 pub fn solo_typing_speed_test(stdout: &mut Stdout) -> Result<(), String> {
@@ -129,7 +130,7 @@ fn render(
         stdout,
         // leaving space, so + 1.
         first_free_row + 1,
-        None,
+        Some(CUSTOM_FOREGROUND_COLOR),
         None,
         false,
     )?;
@@ -288,7 +289,7 @@ fn print_statistics(wpm: f64, accuracy: f64, stdout: &mut std::io::Stdout) -> Re
         stdout,
         terminal_height - 4,
         Some(helpers::CUSTOM_FOREGROUND_COLOR),
-        Some(helpers::CUSTOM_BACKGROUND_COLOR),
+        None,
         false,
     )
     .map_err(|e| e.to_string())?;
@@ -298,7 +299,7 @@ fn print_statistics(wpm: f64, accuracy: f64, stdout: &mut std::io::Stdout) -> Re
         stdout,
         terminal_height - 3,
         Some(helpers::CUSTOM_FOREGROUND_COLOR),
-        Some(helpers::CUSTOM_BACKGROUND_COLOR),
+        None,
         true,
     )
     .map_err(|e| e.to_string())?;
@@ -308,7 +309,7 @@ fn print_statistics(wpm: f64, accuracy: f64, stdout: &mut std::io::Stdout) -> Re
         stdout,
         terminal_height - 2,
         Some(helpers::CUSTOM_FOREGROUND_COLOR),
-        Some(helpers::CUSTOM_BACKGROUND_COLOR),
+        None,
         true,
     )
     .map_err(|e| e.to_string())?;
