@@ -1,5 +1,5 @@
 use directories::ProjectDirs;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::{
     fs,
     io::Write,
@@ -7,11 +7,14 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use crossterm::{cursor::MoveTo, execute, queue, style::Print, terminal};
+use crossterm::terminal;
 
-use crate::helpers::{self, CUSTOM_FOREGROUND_COLOR, queue_centered_message};
+use crate::helpers::{
+    self, CUSTOM_FOREGROUND_COLOR, format_timestamp, move_to_end_before_exit,
+    queue_centered_message,
+};
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 struct SavedStatistics {
     timestamp: u64,
     wpm: f64,
@@ -19,16 +22,42 @@ struct SavedStatistics {
 }
 
 pub fn statistics_display_from_args(stdout: &mut std::io::Stdout) -> Result<(), String> {
-    let (_, terminal_height) = terminal::size().map_err(|e| e.to_string())?;
     helpers::render_border(stdout, true)?;
 
-    let last_wpm = 55.5;
-    let last_accuracy = 69.7;
+    let proj_dirs: ProjectDirs =
+        ProjectDirs::from("speed", "jrm", "heyo").ok_or("Couldnt find data dir")?;
+    let save_path = proj_dirs.data_dir();
+    let statistics_path = save_path.join("statistics.json");
+    let mut statistics = Vec::new();
+    if statistics_path.exists() {
+        let file_contents = fs::read_to_string(&statistics_path).map_err(|e| e.to_string())?;
+        statistics = serde_json::from_str::<Vec<SavedStatistics>>(&file_contents)
+            .map_err(|e| e.to_string())?
+    }
 
+    if statistics.is_empty() {
+        queue_centered_message(
+            "No previous runs found.",
+            stdout,
+            2,
+            Some(CUSTOM_FOREGROUND_COLOR),
+            None,
+            true,
+        )?;
+
+        stdout.flush().map_err(|e| e.to_string())?;
+        sleep(Duration::from_secs(5));
+        move_to_end_before_exit(stdout)?;
+        return Ok(());
+    };
+
+    let time = format_timestamp(statistics.last().unwrap().timestamp)?;
     queue_centered_message(
         format!(
-            "Your last result: WPM {:.1}, accuracy {:.1}%.",
-            last_wpm, last_accuracy
+            "Last run on {}: WPM {:.1}, accuracy {:.1}%.",
+            time,
+            statistics.last().unwrap().wpm,
+            statistics.last().unwrap().accuracy
         )
         .as_str(),
         stdout,
@@ -38,9 +67,30 @@ pub fn statistics_display_from_args(stdout: &mut std::io::Stdout) -> Result<(), 
         true,
     )?;
 
+    if statistics.len() == 1 {
+        move_to_end_before_exit(stdout)?;
+        return Ok(());
+    }
+
+    for (index, single_stat) in statistics.iter().rev().skip(1).enumerate() {
+        let time = format_timestamp(single_stat.timestamp)?;
+        queue_centered_message(
+            format!(
+                "Run on {}: WPM {:.1}, accuracy {:.1}%.",
+                time, single_stat.wpm, single_stat.accuracy
+            )
+            .as_str(),
+            stdout,
+            3 + index as u16,
+            Some(CUSTOM_FOREGROUND_COLOR),
+            None,
+            true,
+        )?;
+    }
+
     stdout.flush().map_err(|e| e.to_string())?;
     sleep(Duration::from_secs(5));
-    execute!(stdout, MoveTo(0, terminal_height - 1), Print("\r\n")).map_err(|e| e.to_string())?;
+    move_to_end_before_exit(stdout)?;
 
     return Ok(());
 }
@@ -80,7 +130,7 @@ pub fn print_after_race_statistics(
     )
     .map_err(|e| e.to_string())?;
 
-    queue!(stdout, MoveTo(0, terminal_height - 1), Print("\r\n")).map_err(|e| e.to_string())?;
+    move_to_end_before_exit(stdout)?;
 
     stdout.flush().map_err(|e| e.to_string())?;
 
@@ -88,30 +138,37 @@ pub fn print_after_race_statistics(
 }
 
 pub fn save_statistics(wpm: f64, accuracy: f64) -> Result<(), String> {
-    //
-    if let Some(proj_dirs) = ProjectDirs::from("speed", "jrm", "heyo") {
-        let save_path = proj_dirs.data_dir();
-        fs::create_dir_all(save_path).map_err(|e| e.to_string())?;
+    let proj_dirs: ProjectDirs =
+        ProjectDirs::from("speed", "jrm", "heyo").ok_or("Couldnt find data dir")?;
 
-        // if statistics.json exists, get the data into data_from_file, then push new SavedStatistics struct
-        let mut data_from_file = Vec::<SavedStatistics>::new();
+    let save_path = proj_dirs.data_dir();
+    fs::create_dir_all(save_path).map_err(|e| e.to_string())?;
 
-        let timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map_err(|e| e.to_string())?
-            .as_secs();
+    let statistics_path = save_path.join("statistics.json");
 
-        data_from_file.push(SavedStatistics {
-            timestamp,
-            wpm,
-            accuracy,
-        });
+    let mut data_from_file = if statistics_path.exists() {
+        //
+        let file_contents = fs::read_to_string(&statistics_path).map_err(|e| e.to_string())?;
+        serde_json::from_str::<Vec<SavedStatistics>>(&file_contents).map_err(|e| e.to_string())?
+    } else {
+        Vec::new()
+    };
 
-        let serialized_struct =
-            serde_json::to_string_pretty(&data_from_file).map_err(|e| e.to_string())?;
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|e| e.to_string())?
+        .as_secs();
 
-        fs::write(save_path.join("statistics.json"), serialized_struct)
-            .map_err(|e| e.to_string())?;
-    }
+    data_from_file.push(SavedStatistics {
+        timestamp,
+        wpm,
+        accuracy,
+    });
+
+    let serialized_struct =
+        serde_json::to_string_pretty(&data_from_file).map_err(|e| e.to_string())?;
+
+    fs::write(statistics_path, serialized_struct).map_err(|e| e.to_string())?;
+
     return Ok(());
 }

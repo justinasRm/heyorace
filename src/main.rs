@@ -1,11 +1,11 @@
 use std::{
     env,
-    io::{self},
+    io::{self, Stdout},
 };
 
 use crossterm::terminal::{self, disable_raw_mode, enable_raw_mode};
 
-use crate::helpers::set_initial_terminal_dimensions;
+use crate::helpers::{move_to_end_before_exit, set_initial_terminal_dimensions};
 mod get_sentence;
 mod helpers;
 mod host;
@@ -18,9 +18,10 @@ const MIN_TERMINAL_HEIGHT: u16 = 20;
 
 pub const CLEAN_EXIT_EVENT_MESSAGE: &str = "cleanexit";
 
-fn clean_exit(e: String) -> Result<(), String> {
+fn clean_exit(e: String, stdout: &mut Stdout) -> Result<(), String> {
     {
         if e != CLEAN_EXIT_EVENT_MESSAGE {
+            move_to_end_before_exit(stdout)?;
             return Err(e.to_string());
         }
         return Ok(());
@@ -63,13 +64,13 @@ fn main() -> Result<(), String> {
         [] => match instructions::run(&mut stdout) {
             Ok(()) => match host::solo_typing_speed_test(&mut stdout) {
                 Ok(()) => Ok(()),
-                Err(e) => clean_exit(e),
+                Err(e) => clean_exit(e, &mut stdout),
             },
-            Err(e) => clean_exit(e),
+            Err(e) => clean_exit(e, &mut stdout),
         },
         [cmd] if cmd == "stats" => match statistics::statistics_display_from_args(&mut stdout) {
             Ok(()) => Ok(()),
-            Err(e) => clean_exit(e),
+            Err(e) => clean_exit(e, &mut stdout),
         },
         // [cmd] if cmd == "type" => match host::solo_typing_speed_test(&mut stdout) {
         //     Ok(()) => Ok(()),

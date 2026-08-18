@@ -8,7 +8,7 @@ use crossterm::queue;
 use crossterm::style::{Color, Print, SetForegroundColor};
 use std::sync::atomic::Ordering;
 
-use crate::helpers::CUSTOM_FOREGROUND_COLOR;
+use crate::helpers::{CUSTOM_FOREGROUND_COLOR, move_to_end_before_exit};
 use crate::{get_sentence, helpers, statistics};
 
 pub fn solo_typing_speed_test(stdout: &mut Stdout) -> Result<(), String> {
@@ -57,7 +57,8 @@ pub fn solo_typing_speed_test(stdout: &mut Stdout) -> Result<(), String> {
         match event {
             Event::Key(key_event) => {
                 if helpers::is_exit_event(Event::Key(key_event)) {
-                    break;
+                    move_to_end_before_exit(stdout)?;
+                    return Ok(());
                 }
                 match key_event.code {
                     KeyCode::Char(ch) => {

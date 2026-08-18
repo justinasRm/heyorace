@@ -2,6 +2,7 @@ use std::io::{Stdout, Write};
 use std::println;
 use std::time::{Duration, Instant};
 
+use chrono::{DateTime, Local};
 use crossterm::cursor::MoveTo;
 use crossterm::event::{Event, KeyCode, KeyModifiers};
 use crossterm::style::{
@@ -276,6 +277,21 @@ pub fn set_initial_terminal_dimensions() -> Result<(), String> {
     let usable_terminal_height = terminal_height - 2;
     helpers::USABLE_TERMINAL_WIDTH.store(usable_terminal_width, Ordering::Relaxed);
     helpers::USABLE_TERMINAL_HEIGHT.store(usable_terminal_height, Ordering::Relaxed);
+
+    return Ok(());
+}
+
+pub fn format_timestamp(timestamp: u64) -> Result<String, String> {
+    let datetime = DateTime::from_timestamp(timestamp as i64, 0)
+        .ok_or("Invalid timestamp")?
+        .with_timezone(&Local);
+
+    Ok(datetime.format("%Y-%m-%d %H:%M:%S").to_string())
+}
+
+pub fn move_to_end_before_exit(stdout: &mut Stdout) -> Result<(), String> {
+    let (_, terminal_height) = terminal::size().map_err(|e| e.to_string())?;
+    execute!(stdout, MoveTo(0, terminal_height - 1), Print("\r\n")).map_err(|e| e.to_string())?;
 
     return Ok(());
 }
