@@ -1,8 +1,22 @@
-use std::{io::Write, thread::sleep, time::Duration};
+use directories::ProjectDirs;
+use serde::Serialize;
+use std::{
+    fs,
+    io::Write,
+    thread::sleep,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 
 use crossterm::{cursor::MoveTo, execute, queue, style::Print, terminal};
 
 use crate::helpers::{self, CUSTOM_FOREGROUND_COLOR, queue_centered_message};
+
+#[derive(Serialize)]
+struct SavedStatistics {
+    timestamp: u64,
+    wpm: f64,
+    accuracy: f64,
+}
 
 pub fn statistics_display_from_args(stdout: &mut std::io::Stdout) -> Result<(), String> {
     let (_, terminal_height) = terminal::size().map_err(|e| e.to_string())?;
@@ -75,5 +89,29 @@ pub fn print_after_race_statistics(
 
 pub fn save_statistics(wpm: f64, accuracy: f64) -> Result<(), String> {
     //
+    if let Some(proj_dirs) = ProjectDirs::from("speed", "jrm", "heyo") {
+        let save_path = proj_dirs.data_dir();
+        fs::create_dir_all(save_path).map_err(|e| e.to_string())?;
+
+        // if statistics.json exists, get the data into data_from_file, then push new SavedStatistics struct
+        let mut data_from_file = Vec::<SavedStatistics>::new();
+
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|e| e.to_string())?
+            .as_secs();
+
+        data_from_file.push(SavedStatistics {
+            timestamp,
+            wpm,
+            accuracy,
+        });
+
+        let serialized_struct =
+            serde_json::to_string_pretty(&data_from_file).map_err(|e| e.to_string())?;
+
+        fs::write(save_path.join("statistics.json"), serialized_struct)
+            .map_err(|e| e.to_string())?;
+    }
     return Ok(());
 }
