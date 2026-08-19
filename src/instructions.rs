@@ -3,18 +3,12 @@ use std::{
     time::Duration,
 };
 
-use crossterm::{
-    cursor::MoveTo,
-    event, execute,
-    terminal::{Clear, ClearType::FromCursorDown},
-};
+use crossterm::{cursor::MoveTo, event, execute};
 
 use crate::helpers::{self, CUSTOM_FOREGROUND_COLOR, queue_centered_message};
 
 pub fn run(stdout: &mut Stdout) -> Result<(), String> {
-    execute!(stdout, MoveTo(1, 1), Clear(FromCursorDown)).map_err(|e| e.to_string())?;
-
-    helpers::render_border_over_duration(stdout, Duration::from_secs(1))?;
+    helpers::render_border_over_duration(stdout, Duration::from_secs(1), true)?;
     let first_message_ended_row = queue_centered_message(
         "You'll be given a paragraph (that is not AI generated, mind you) and a minute to type out as much of it as possible.",
         stdout,

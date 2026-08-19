@@ -201,10 +201,18 @@ pub fn render_border(stdout: &mut Stdout, clear_before_render: bool) -> Result<(
     return Ok(());
 }
 
-pub fn render_border_over_duration(stdout: &mut Stdout, duration: Duration) -> Result<(), String> {
+pub fn render_border_over_duration(
+    stdout: &mut Stdout,
+    duration: Duration,
+    clear_before_render: bool,
+) -> Result<(), String> {
     let (terminal_width, terminal_height) = terminal::size().map_err(|e| e.to_string())?;
     let total_chars_to_print: u16 = terminal_width * 2 + terminal_height * 2;
     let sleep_timer = duration.as_secs_f64() / total_chars_to_print as f64;
+
+    if clear_before_render {
+        execute!(stdout, MoveTo(0, 1), Clear(FromCursorDown)).map_err(|e| e.to_string())?;
+    }
 
     execute!(stdout, SetForegroundColor(Color::DarkYellow)).map_err(|e| e.to_string())?;
 
