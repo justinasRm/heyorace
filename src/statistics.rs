@@ -9,6 +9,7 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
+use crossterm::event::{self, Event, KeyCode};
 use crossterm::terminal;
 
 use crate::helpers::{
@@ -78,13 +79,7 @@ pub fn statistics_display_from_args(stdout: &mut std::io::Stdout) -> Result<(), 
         return Ok(());
     }
 
-    let mut statistics_x4 = statistics.clone();
-    // statistics_x4.extend_from_slice(&statistics);
-    // statistics_x4.extend_from_slice(&statistics);
-    // statistics_x4.extend_from_slice(&statistics);
-    // statistics_x4.extend_from_slice(&statistics);
-
-    for (index, single_stat) in statistics_x4.iter().rev().skip(1).enumerate() {
+    for (index, single_stat) in statistics.iter().rev().skip(1).enumerate() {
         if index < USABLE_TERMINAL_HEIGHT.load(Relaxed) as usize - 4 {
             let time = format_timestamp(single_stat.timestamp)?;
             queue_centered_message(
@@ -100,14 +95,6 @@ pub fn statistics_display_from_args(stdout: &mut std::io::Stdout) -> Result<(), 
                 true,
             )?;
         } else {
-            let path = statistics_path
-                .to_str()
-                .ok_or("Couldn't find statistics path")?;
-            let url = format!("file://{}", path.replace(" ", "%20"));
-            // problem - link is large, and to make it clickable its even larger. queue_centered_message chunks by lines, and terminal_link is multiple lines.
-            // need custom function for this, or not display the path here.
-            let terminal_link = format!("\x1b]8;;{}\x1b\\{}\x1b]8;;\x1b\\", url, "here");
-
             queue_centered_message(
                 "...",
                 stdout,
@@ -117,7 +104,7 @@ pub fn statistics_display_from_args(stdout: &mut std::io::Stdout) -> Result<(), 
                 true,
             )?;
             queue_centered_message(
-                format!("All stats visible {}", terminal_link).as_str(),
+                "Press ESC or CTRL + C to quit.",
                 stdout,
                 USABLE_TERMINAL_HEIGHT.load(Relaxed),
                 Some(CUSTOM_FOREGROUND_COLOR),
@@ -129,10 +116,16 @@ pub fn statistics_display_from_args(stdout: &mut std::io::Stdout) -> Result<(), 
     }
 
     stdout.flush().map_err(|e| e.to_string())?;
-    sleep(Duration::from_secs(5));
-    move_to_end_before_exit(stdout)?;
 
-    return Ok(());
+    loop {
+        let event = event::read().map_err(|e| e.to_string())?;
+        if let Event::Key(key_event) = event
+            && helpers::is_exit_event(Event::Key(key_event))
+        {
+            move_to_end_before_exit(stdout)?;
+            return Ok(());
+        }
+    }
 }
 
 pub fn print_after_race_statistics(
