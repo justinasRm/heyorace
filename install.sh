@@ -16,6 +16,12 @@ case "$os" in
       *) echo "Unsupported macOS arch: $arch" >&2; exit 1 ;;
     esac
     ;;
+  Linux)
+    case "$arch" in
+      x86_64) asset="heyo-linux-x86_64" ;;
+      *) echo "Unsupported Linux arch: $arch" >&2; exit 1 ;;
+    esac
+    ;;
   *)
     echo "Unsupported OS: $os" >&2
     exit 1
