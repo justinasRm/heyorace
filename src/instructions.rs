@@ -25,10 +25,18 @@ pub fn run(stdout: &mut Stdout) -> Result<(), String> {
         None,
         false,
     )?;
+    let third_message_ended_row = queue_centered_message(
+        "stats visible at 'heyo stats'",
+        stdout,
+        second_message_ended_row + 1,
+        Some(CUSTOM_FOREGROUND_COLOR),
+        None,
+        false,
+    )?;
     queue_centered_message(
         "Press any key to start.",
         stdout,
-        second_message_ended_row + 1,
+        third_message_ended_row + 2,
         Some(CUSTOM_FOREGROUND_COLOR),
         None,
         false,
